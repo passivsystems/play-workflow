@@ -2,7 +2,6 @@ package workflow
 
 import scala.concurrent.Future
 import cats.Functor
-import cats.data.Xor
 import cats.free.Free
 import play.api.Logger
 import play.api.mvc.{Call, Request, RequestHeader, Result, Session, WebSocket}
@@ -66,6 +65,15 @@ object Workflow {
 
     override def flatMap[A, B](fa: Workflow[A])(f: A => Workflow[B]): Workflow[B] =
       fa.flatMap(f)
+
+    @annotation.tailrec
+    override def tailRecM[A, B](a: A)(f: A => Workflow[Either[A,B]]): Workflow[B] =
+      f(a).go{
+        case WorkflowSyntax.WSStep(label, step, reader, writer, next) => next(a)
+      } match {
+        case Left(a)  => tailRecM(a)(f)
+        case Right(b) => pure(b)
+      }
 
     override def pure[A](x: A): Workflow[A] =
       Free.pure(x)
@@ -213,7 +221,7 @@ object Workflow {
     }
 
   private def nextLabel[A](wf: Workflow[A]) = wf.resume match {
-    case Xor.Left(ws: WorkflowSyntax.WSStep[_, _]) => ws.label
-    case err                                       => sys.error(s"no next label: $err")
+    case Left(ws: WorkflowSyntax.WSStep[_, _]) => ws.label
+    case err                                   => sys.error(s"no next label: $err")
   }
 }
