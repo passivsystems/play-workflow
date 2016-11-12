@@ -1,6 +1,10 @@
 package workflow
 
-import cats.free.Free
+import scala.concurrent.Future
+import cats.Functor
+import cats.free.FreeT
+import cats.implicits._
+import play.api.libs.concurrent.Execution.Implicits._
 
 import Workflow._
 
@@ -16,6 +20,6 @@ object WorkflowOps {
                              a   <- wfa
                              acc <- sequence(rest)
                            } yield a :: acc
-      case Nil         => Free.pure(Nil)
+      case Nil         => Workflow.Workflow.pure(Nil)
     }
 }

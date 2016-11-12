@@ -2,7 +2,8 @@ package workflow
 
 import scala.concurrent.Future
 import cats.Functor
-import cats.free.Free
+import cats.free.FreeT
+import cats.implicits._
 import play.api.Logger
 import play.api.mvc.{Call, Request, RequestHeader, Result, Session, WebSocket}
 
@@ -20,7 +21,7 @@ object Workflow {
     router:      {def post(stepKey: String): Call; def get(stepKey: String): Call}
   )
 
-  case class WorkflowContext[A] private (
+  case class WorkflowContext[A] private [Workflow] (
     actionCurrent:  Call,
     actionPrevious: Option[Call],
     stepObject:     Option[A],
@@ -56,27 +57,24 @@ object Workflow {
   }
 
   /** Defines a sequence of steps to be executed */
-  type Workflow[A] = Free[WorkflowSyntax, A]
+  type Workflow[A] = FreeT[WorkflowSyntax, Future, A]
 
   object Workflow extends cats.Monad[Workflow] {
     // workflow cannot be a monadPlus unless A is a Monoid...
   //object Workflow extends cats.MonadFilter[Workflow] {
     //def empty[A]: Workflow[A] = pure(A.empty) // Free.liftF(WorkflowSyntax.Nothing())
 
+    //override def map[A, B](fa: Workflow[A])(f: A => B): Workflow[B] =
+    // fa.map(f)
+
     override def flatMap[A, B](fa: Workflow[A])(f: A => Workflow[B]): Workflow[B] =
       fa.flatMap(f)
 
-    @annotation.tailrec
     override def tailRecM[A, B](a: A)(f: A => Workflow[Either[A,B]]): Workflow[B] =
-      f(a).go{
-        case WorkflowSyntax.WSStep(label, step, reader, writer, next) => next(a)
-      } match {
-        case Left(a)  => tailRecM(a)(f)
-        case Right(b) => pure(b)
-      }
+      FreeT.tailRecM(a)(f)
 
     override def pure[A](x: A): Workflow[A] =
-      Free.pure(x)
+      FreeT.pure[WorkflowSyntax, Future, A](x)
   }
 
   /** Wraps a Step as a Workflow so can be composed in a Workflow
@@ -86,9 +84,8 @@ object Workflow {
    *  @param reader defines how to read the step result out of the session
    *  @param writer defines how to write the step result to the session
    */
-  def step[A](label: String, step: Step[A])(implicit reader: upickle.default.Reader[A], writer: upickle.default.Writer[A]): Workflow[A] = {
-    Free.liftF(WorkflowSyntax.WSStep[A,A](label, step, reader, writer, identity))
-  }
+  def step[A](label: String, step: Step[A])(implicit reader: upickle.default.Reader[A], writer: upickle.default.Writer[A]): Workflow[A] =
+    FreeT.liftF[WorkflowSyntax, Future, A](WorkflowSyntax.WSStep[A,A](label, step, reader, writer, identity))
 
   private def mkWorkflowContext[A](wfc: WorkflowConf[A], label: String, previousLabel: Option[String], optB: Option[A]): WorkflowContext[A] = {
     val actionCurrent = wfc.router.post(label)
@@ -111,8 +108,9 @@ object Workflow {
   def getWorkflow[A](wfc: WorkflowConf[A], stepId: String)(implicit request: Request[Any]): Future[Result] = {
     logger.warn(s"getWorkflow $stepId")
     if (stepId == "start") {
-      val initialStep = nextLabel(wfc.workflow)
-      Future(ResultsImpl.Redirect(wfc.router.get(initialStep).url, request.queryString).withNewSession)
+      nextLabel(wfc.workflow).map { initialStep =>
+        ResultsImpl.Redirect(wfc.router.get(initialStep).url, request.queryString).withNewSession
+      }
     } else {
       doGet(wfc, stepId, None)(wfc.workflow)(request).flatMap {
         case Some(r) => Future(r)
@@ -121,23 +119,22 @@ object Workflow {
     }
   }
 
-  private def doGet[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String])(wf: Workflow[A]): Request[Any] => Future[Option[Result]] =
-    request => wf.fold(
-      { a: A => sys.error("doGet: flow finished!") // flow has finished (only will happen if last step has a post)
-      },
-      {
-        case ws: WorkflowSyntax.WSStep[A,_] =>
-          logger.warn(s"doGet $targetLabel")
-          if (ws.label == targetLabel) {
-            val optB = optDataFor(ws.label, request.session)(ws.reader)
-            val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
-            ws.step.get(ctx)(request)
-          } else {
-            val b = dataFor(ws.label, request.session)(ws.reader)
-            doGet(wfc, targetLabel, Some(ws.label))(ws.next(b))(request)
-          }
-      }
-    )
+  private def doGet[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String])(wf: Workflow[A])(request: Request[Any]): Future[Option[Result]] = {
+    val x: Future[Either[WorkflowSyntax[Workflow[A]], A]] = wf.resume
+    x.flatMap {
+      case Right(a) => sys.error("doGet: flow finished!") // flow has finished (only will happen if last step has a post)
+      case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
+        logger.warn(s"doGet $targetLabel")
+        if (ws.label == targetLabel) {
+          val optB = optDataFor(ws.label, request.session)(ws.reader)
+          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
+          ws.step.get(ctx)(request)
+        } else {
+          val b = dataFor(ws.label, request.session)(ws.reader)
+          doGet(wfc, targetLabel, Some(ws.label))(ws.next(b))(request)
+        }
+    }
+  }
 
   /** Will execute a workflow and return an Action result. The POST request will be
    *  directed to the indicated stepId.
@@ -150,30 +147,30 @@ object Workflow {
     doPost(wfc, stepId, None)(wfc.workflow)(request)
   }
 
-  private def doPost[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String])(wf: Workflow[A]): Request[Any] => Future[Result] =
-    request => wf.fold(
-      { a: A => sys.error("doPost: flow finished!") // flow has finished (only will happen if last step has a post)
-      },
-      {
-        case ws: WorkflowSyntax.WSStep[A,_] =>
-          logger.warn(s"doPost $targetLabel")
-          if (ws.label == targetLabel) {
-            val optB = optDataFor(ws.label, request.session)(ws.reader)
-            val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
-            ws.step.post(ctx)(request).map {
-              case Left(r)  => logger.warn(s"$ws.label returning result"); r
-              case Right(a) => logger.warn(s"putting ${ws.label} -> $a in session")
-                               val next = nextLabel(ws.next(a))
+  private def doPost[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String])(wf: Workflow[A])(request: Request[Any]): Future[Result] = {
+    val x: Future[Either[WorkflowSyntax[Workflow[A]], A]] = wf.resume
+    x.flatMap {
+      case Right(a) => sys.error("doPost: flow finished!") // flow has finished (only will happen if last step has a post)
+      case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
+        logger.warn(s"doPost $targetLabel")
+        if (ws.label == targetLabel) {
+          val optB = optDataFor(ws.label, request.session)(ws.reader)
+          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
+          ws.step.post(ctx)(request).flatMap {
+            case Left(r)  => logger.warn(s"$ws.label returning result"); Future(r)
+            case Right(a) => logger.warn(s"putting ${ws.label} -> $a in session")
+                             nextLabel(ws.next(a)).map { next =>
                                logger.warn(s"redirecting to $next")
                                ResultsImpl.Redirect(mkWorkflowContext(wfc, next, previousLabel, optB).actionCurrent).withSession(
                                  request.session + (ws.label -> upickle.default.write(a)(ws.writer)))
-            }
-          } else {
-            val b = dataFor(ws.label, request.session)(ws.reader)
-            doPost(wfc, targetLabel, Some(ws.label))(ws.next(b))(request)
+                             }
           }
-      }
-    )
+        } else {
+          val b = dataFor(ws.label, request.session)(ws.reader)
+          doPost(wfc, targetLabel, Some(ws.label))(ws.next(b))(request)
+        }
+    }
+  }
 
   private type WS[A,B] = scala.concurrent.Future[Either[play.api.mvc.Result,(play.api.libs.iteratee.Enumerator[A], play.api.libs.iteratee.Iteratee[B,Unit]) => Unit]]
 
@@ -184,29 +181,28 @@ object Workflow {
    *  @param wfc the configuration defining the workflow
    *  @param stepId the current step position.
    */
-  def wsWorkflow[A](wfc: WorkflowConf[A], currentLabel: String): RequestHeader => WS[String, String] = request => {
+  def wsWorkflow[A](wfc: WorkflowConf[A], currentLabel: String)(request: RequestHeader): WS[String, String] = {
     logger.warn(s"wsWorkflow $currentLabel")
-    doWs(wfc, currentLabel, None)(wfc.workflow)(request) match {
+    doWs(wfc, currentLabel, None)(wfc.workflow)(request).flatMap {
       case WebSocket(f) => f(request)
     }
   }
 
-  private def doWs[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String])(wf: Workflow[A]): RequestHeader => WebSocket[String, String] =
-    request => wf.fold(
-      { a: A => sys.error("doGet: flow finished!") // flow has finished (only will happen if last step has a post)
-      },
-      {
-        case ws: WorkflowSyntax.WSStep[A,_] =>
-          logger.warn(s"doWs $targetLabel")
-          if (ws.label == targetLabel) {
-            val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, None)
-            ws.step.ws.getOrElse(sys.error(s"No ws defined for step ${ws.label}"))(ctx)(request)
-          } else {
-            val b = dataFor(ws.label, request.session)(ws.reader)
-            doWs(wfc, targetLabel, Some(ws.label))(ws.next(b))(request)
-          }
-      }
-    )
+  private def doWs[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String])(wf: Workflow[A])(request: RequestHeader): Future[WebSocket[String, String]] = {
+    val x: Future[Either[WorkflowSyntax[Workflow[A]], A]] = wf.resume
+    x.flatMap {
+      case Right(a) => sys.error("doWs: flow finished!") // flow has finished (only will happen if last step has a post)
+      case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
+        logger.warn(s"doWs $targetLabel")
+        if (ws.label == targetLabel) {
+          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, None)
+          Future(ws.step.ws.getOrElse(sys.error(s"No ws defined for step ${ws.label}"))(ctx)(request))
+        } else {
+          val b = dataFor(ws.label, request.session)(ws.reader)
+          doWs(wfc, targetLabel, Some(ws.label))(ws.next(b))(request)
+        }
+    }
+  }
 
   private def dataFor[A](label: String, session: Session)(implicit reader: upickle.default.Reader[A]): A =
     session.get(label) match {
@@ -220,8 +216,11 @@ object Workflow {
       case None    => None
     }
 
-  private def nextLabel[A](wf: Workflow[A]) = wf.resume match {
-    case Left(ws: WorkflowSyntax.WSStep[_, _]) => ws.label
-    case err                                   => sys.error(s"no next label: $err")
+  private def nextLabel[A](wf: Workflow[A]) = {
+    val x: Future[Either[WorkflowSyntax[Workflow[A]], A]] = wf.resume
+    x.map {
+      case Left(ws: WorkflowSyntax.WSStep[_, _]) => ws.label
+      case err                                   => sys.error(s"no next label: $err")
+    }
   }
 }
