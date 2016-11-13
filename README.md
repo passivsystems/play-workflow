@@ -10,6 +10,14 @@ A workflow is composed of steps, which are like mini-controllers. Once a step ha
 
 The workflow is monadic and can be defined with for-comprehensions.
 
+## Add to sbt project
+
+add the following to build.sbt:
+```scala
+libraryDependencies += "com.github.passivsystems" % "play-workflow" % "0.0.1-SNAPSHOT"
+resolvers += "jitpack" at "https://jitpack.io"
+```
+
 ##Example
 
 routes:
@@ -23,14 +31,14 @@ GET     /myflow/:stepKey    controllers.MyFlow.get(stepKey)
 MyFlow:
 
 ```scala
-import workflow.Workflow._
+import workflow._
 
 object MyFlow extends Controller{
 
   val workflow: Workflow[Unit] =
     for {
-      step1Result <- step("step1", Step1())
-      _           <- step("step2", Step2(step1Result))
+      step1Result <- Workflow.step("step1", Step1())
+      _           <- Workflow.step("step2", Step2(step1Result))
     } yield ()
 
   val wfc = WorkflowConf[Unit](
@@ -38,11 +46,11 @@ object MyFlow extends Controller{
     router      = routes.MyFlow)
 
   def get(stepId: String) = Action.async { implicit request =>
-    getWorkflow(wfc, stepId)
+    WorkflowEngine.getWorkflow(wfc, stepId)
   }
 
   def post(stepId: String) = Action.async { implicit request =>
-    postWorkflow(wfc, stepId)
+    WorkflowEngine.postWorkflow(wfc, stepId)
   }
 
   def start() = get("start")
@@ -58,6 +66,8 @@ The steps can be defined as follows:
 Step1:
 
 ```scala
+import workflow.{Step, WorkflowContext}
+
 case class Step1Result(name: String)
 
 object Step1 extends Controller {
@@ -95,7 +105,7 @@ object Step1 extends Controller {
 step1.scala.html:
 
 ```scala
-@(ctx: workflow.Workflow.WorkflowContext[Step1Result], stepForm: Form[Step1Result])
+@(ctx: workflow.WorkflowContext[Step1Result], stepForm: Form[Step1Result])
 
   @stepForm.globalError.map { error => @Html(Messages(error.message)) }
   <form role="form" method="post" action="@ctx.actionCurrent">
@@ -109,6 +119,7 @@ step1.scala.html:
 and Step2:
 
 ```scala
+import workflow.{Step, WorkflowContext}
 object Step2 extends Controller {
 
   def apply(step1Result: Step1Result): Step[Unit] = {
@@ -128,7 +139,7 @@ object Step2 extends Controller {
 step2.scala.html:
 
 ```scala
-@(ctx: workflow.Workflow.WorkflowContext[Unit], step1Result: Step1Result)
+@(ctx: workflow.WorkflowContext[Unit], step1Result: Step1Result)
 
   <p>Hello @step1Result.name</p>
 
@@ -140,18 +151,18 @@ step2.scala.html:
 
 Here, the first step contains a simple form to capture some data. This data is then forwarded to the next step to be displayed.
 
-The steps do not need to know what came before, or what comes after, as long as their data inputs are met. This means that steps can be reused in new flows.
+The steps do not need to know which steps came before, or which come after, as long as their data inputs are met. This means that steps can be reused in new flows.
 
 ## Running
 
-The flow can be accessed at URL `/myflow/start` as defined in the routes file. This is an alias to the first step in the flow, which is `/myflow/step1` in this case. Page two is `/myflow/step2`. In addition to being an alias, the `start` step will clear the session of previous runs.
+The flow can be accessed at URL `/myflow/start` as defined in the routes file. This is an alias to the first step in the flow, which is `/myflow/step1` in this case. Page two is `/myflow/step2`. In addition to being an alias, the `start` step will clear the session of data from previous runs.
 
 
 ## Serialisation
 
 Once a step has been completed (i.e. the post function returns a `Right`), the result is stored in the session, and the user may access steps further down the workflow.
 
-The step result is stored by [pickling](http://www.lihaoyi.com/upickle-pprint/upickle/). (In the future we will allow custom storing strategies, e.g. to database).
+The step result is stored by [pickling](http://www.lihaoyi.com/upickle-pprint/upickle/).
 If the session cannot be restored, (e.g. changed domain objects), the session will be cleared, and the flow started from the beginning.
 
 ## Navigation
@@ -164,11 +175,14 @@ The steps are provided a `WorkflowContext[A]` (where `A` refers to the result of
 
 ## Security
 
-The workflow has no special handling of security. The Workflow controller can check for authentication, do any required logins before calling the workflow.
+The workflow has no special handling of security. The controller is responsible for checking authentication before calling the WorkflowEngine. Any authenticated data can be fed into the flow as required, to be available to steps.
 
 e.g.
 
 ```scala
+import workflow._
+import workflow.WorkflowEngine._
+import workflow.Workflow.step
 object MySecureFlow extends AuthController {
 
   def workflow(auth: Auth): Workflow[Unit] =
@@ -239,3 +253,22 @@ for {
 }
 ```
 which would raise a MatchException if the case match fails.
+
+
+Workflows are internally built as a transformer on top of Future, so we can also lift future actions into the Workflow:
+
+```scala
+def getBooleanFromApi(): Future[Boolean] = ???
+
+for {
+  yes1 <- Workflow.liftF(getBooleanFromApi())
+  yes2 <- if (yes1) Workflow.step("choose2"), ChooseStep())
+          else      Workflow.pure(true)
+}
+```
+
+
+## TODO
+
+* Allow custom session storing strategies (e.g. to database)
+  * Provide session prefix or cookie name to engine, to segregate session for different flows
