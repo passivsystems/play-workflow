@@ -33,7 +33,7 @@ object WorkflowExecutor {
     logger.warn(s"getWorkflow $stepId")
     if (stepId == "start") {
       nextLabel(wfc.workflow).map {
-        case Some(initialStep) => ResultsImpl.Redirect(wfc.router.get(initialStep).url, request.queryString).withNewSession
+        case Some(initialStep) => wfc.dataStorage.withNewSession(ResultsImpl.Redirect(wfc.router.get(initialStep).url, request.queryString))
         case None              => sys.error("empty flow!")
       }
     } else {
@@ -52,11 +52,11 @@ object WorkflowExecutor {
       case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
         logger.warn(s"doGet $targetLabel")
         if (ws.label == targetLabel) {
-          val optB = optDataFor(ws.label, request.session, ws.serialiser)
+          val optB = optDataFor(ws.label, wfc.dataStorage, ws.serialiser)
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
           ws.step.get(ctx)(request)
         } else {
-          val b = dataFor(ws.label, request.session, ws.serialiser)
+          val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
           doGet(wfc, targetLabel, Some(ws.label), ws.next(b))
         }
     }
@@ -78,20 +78,22 @@ object WorkflowExecutor {
       case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
         logger.warn(s"doPost $targetLabel")
         if (ws.label == targetLabel) {
-          val optB = optDataFor(ws.label, request.session, ws.serialiser)
+          val optB = optDataFor(ws.label, wfc.dataStorage, ws.serialiser)
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
           ws.step.post(ctx)(request).flatMap {
             case Left(r)  => logger.warn(s"$ws.label returning result"); Future(r)
             case Right(a) => logger.warn(s"putting ${ws.label} -> $a in session")
                              nextLabel(ws.next(a)).map {
                                case Some(next) => logger.warn(s"redirecting to $next")
-                                                  ResultsImpl.Redirect(mkWorkflowContext(wfc, next, previousLabel, optB).actionCurrent).withSession(
-                                                    request.session + (ws.label -> ws.serialiser.serialise(a)))
+                                                  wfc.dataStorage.withUpdatedSession(
+                                                    ResultsImpl.Redirect(mkWorkflowContext(wfc, next, previousLabel, optB).actionCurrent),
+                                                    ws.label,
+                                                    ws.serialiser.serialise(a))
                                case None       => sys.error("doPost: flow finished!")
                              }
           }
         } else {
-          val b = dataFor(ws.label, request.session, ws.serialiser)
+          val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
           doPost(wfc, targetLabel, Some(ws.label), ws.next(b))
         }
     }
@@ -121,16 +123,16 @@ object WorkflowExecutor {
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, None)
           Future(ws.step.ws.getOrElse(sys.error(s"No ws defined for step ${ws.label}"))(ctx)(request))
         } else {
-          val b = dataFor(ws.label, request.session, ws.serialiser)
+          val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
           doWs(wfc, targetLabel, Some(ws.label), ws.next(b))
         }
     }
 
-  private def dataFor[A](label: String, session: Session, serialiser: Serialiser[A]): A =
-    optDataFor(label, session, serialiser).getOrElse(sys.error(s"invalid state - should have stored result for step $label"))
+  private def dataFor[A](label: String, dataStorage: DataStorage, serialiser: Serialiser[A])(implicit request: RequestHeader): A =
+    optDataFor(label, dataStorage, serialiser).getOrElse(sys.error(s"invalid state - should have stored result for step $label"))
 
-  private def optDataFor[A](label: String, session: Session, serialiser: Serialiser[A]): Option[A] =
-    session.get(label).flatMap(serialiser.deserialise(_))
+  private def optDataFor[A](label: String, dataStorage: DataStorage, serialiser: Serialiser[A])(implicit request: RequestHeader): Option[A] =
+    dataStorage.readData(label).flatMap(serialiser.deserialise(_))
 
   private def nextLabel[A](wf: Workflow[A])(implicit ec: ExecutionContext): Future[Option[String]] =
     wf.resume.map {

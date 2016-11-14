@@ -8,8 +8,22 @@ import play.api.mvc.{Call, Request, RequestHeader, Result, WebSocket}
 //      get client to explicitly import?
 package object workflow extends cats.instances.FutureInstances {
 
+  /** Defines how to serialise a single step object to/from String */
+  trait Serialiser[A] {
+    def serialise(a: A): String
+    def deserialise(s: String): Option[A]
+  }
+
+  /** Defines how to store/restore serialised step objects */
+  trait DataStorage {
+    def withNewSession(result: Result)(implicit request: RequestHeader): Result
+    def withUpdatedSession(result: Result, key: String, s: String)(implicit request: RequestHeader): Result
+    def readData(key: String)(implicit request: RequestHeader): Option[String]
+  }
+
   case class WorkflowConf[A](
     workflow:    Workflow[A],
+    dataStorage: DataStorage = SessionStorage,
     router:      {def post(stepKey: String): Call; def get(stepKey: String): Call}
   )
 
@@ -50,20 +64,4 @@ package object workflow extends cats.instances.FutureInstances {
 
   /** Defines a sequence of steps to be executed */
   type Workflow[A] = FreeT[WorkflowSyntax, Future, A]
-
-  // Other strategies include:
-  //   provide session prefix or cookie name to engine, to segregate session for different flows
-  //   store to db
-  trait Serialiser[A] {
-    def serialise(a: A): String
-    def deserialise(s: String): Option[A]
-  }
-
-  /** serialiser which uses upickle deault Reader and Writer for storing step results in session */
-  object UpickleSerialiser {
-    implicit def serialiser[A](implicit reader: upickle.default.Reader[A], writer: upickle.default.Writer[A]): Serialiser[A] = new Serialiser[A] {
-      override def serialise(a: A) = upickle.default.write(a)(writer)
-      override def deserialise(s: String) = Some(upickle.default.read[A](s)(reader))
-    }
-  }
 }

@@ -163,13 +163,26 @@ The flow can be accessed at URL `/myflow/start` as defined in the routes file. T
 
 Once a step has been completed (i.e. the post function returns a `Right`), the result is stored for future requests, and the user may access steps further down the workflow.
 
-If the object to be stored can be pickled with [upickle](http://www.lihaoyi.com/upickle-pprint/upickle/), then the default serialiser can be used to store the result in a cookie.
+If the object to be stored can be pickled with [upickle](http://www.lihaoyi.com/upickle-pprint/upickle/), then the default serialiser can be used:
 ```
 import workflow.UpickleSerialiser._
 ```
-You can provide your own serialiser, by implementing the trait `workflow.Serialiser` to provide different behaviour. E.g. store in database.
+You can provide your own serialiser, by implementing the trait `workflow.Serialiser` to provide different behaviour, and making sure the serialiser is implicitly available.
 
-If the session cannot be restored, (e.g. changed domain objects), the session will be cleared, and the flow started from the beginning.
+As well as indicating how to serialise an individual step object, a storage strategy can be defined. The predefined storages are:
+* `SessionStorage` - which uses Play's default session which stores the data in a cookie. Each step has it's data stored as a new key, and starting a new flow will wipe the whole session. This is the default.
+* `SubSessionStorage` - this is similar to SessionStorage apart from a key is required, and all session data is stored under this key. This allows the data to participate with existing session data, including other flows if the key is unique. When a new flow is started, only the data under the key is wiped.
+* `GzippedSessionStorage` - this is the same as `SessionStorage` apart from the data is also compressed with gzip.
+The storage can be set in the WorkflowConf:
+```scala
+  val wfc = WorkflowConf[Unit](
+    workflow    = workflow(auth),
+    dataStorage = SubSessionStorage("myflow"),
+    router      = routes.MyFlow)
+```
+Custom storage, e.g. to store in database, can be created by importing the trait `DataStorage`.
+
+If the session cannot be restored, (e.g. changed domain objects), the data will be cleared, and the flow started from the beginning.
 
 ## Navigation
 
