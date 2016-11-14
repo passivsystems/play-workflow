@@ -47,11 +47,11 @@ object MyFlow extends Controller{
     router      = routes.MyFlow)
 
   def get(stepId: String) = Action.async { implicit request =>
-    WorkflowEngine.getWorkflow(wfc, stepId)
+    WorkflowExecutor.getWorkflow(wfc, stepId)
   }
 
   def post(stepId: String) = Action.async { implicit request =>
-    WorkflowEngine.postWorkflow(wfc, stepId)
+    WorkflowExecutor.postWorkflow(wfc, stepId)
   }
 
   def start() = get("start")
@@ -194,13 +194,13 @@ The steps are provided a `WorkflowContext[A]` (where `A` refers to the result of
 
 ## Security
 
-The workflow has no special handling of security. The controller is responsible for checking authentication before calling the WorkflowEngine. Any authenticated data can be fed into the flow as required, to be available to steps.
+The workflow has no special handling of security. The controller is responsible for checking authentication before calling the WorkflowExecutor. Any authenticated data can be fed into the flow as required, to be available to steps.
 
 e.g.
 
 ```scala
 import workflow._
-import workflow.WorkflowEngine._
+import workflow.WorkflowExecutor._
 import workflow.Workflow.step
 object MySecureFlow extends AuthController {
 
@@ -286,8 +286,53 @@ for {
 }
 ```
 
+## Web Sockets
+
+Steps can use websockets.
+First register the endpoint in routes:
+```scala
+GET     /install/:stepKey/ws        MyFlow.ws(stepKey)
+```
+
+and add the endpoint to the controller:
+```scala
+object MyFlow extends Controller {
+  // ...
+  def ws(stepId: String) = WebSocket[String, String] { implicit request =>
+    WorkflowExecutor.wsWorkflow(wfc, stepId)
+  }
+}
+```
+The weboscket only needs to be added to steps where it is relevant. However a call to the websocket url for a step which has not been implemented will fail:
+
+```scala
+import play.api.Play.current
+object MyStep extends Controller {
+  def apply(): Step[StepOut] {
+
+    // ..
+
+    def ws(ctx: WorkflowContext[StepOut])(implicit request: RequestHeader) =
+      WebSocket.acceptWithActor[String, String] { implicit request => out =>
+      akka.actor.Props(new MyStepActor(out))
+    }
+
+    Step[StepOut](
+        get  = ???,
+        post = ???,
+        ws = Some(ctx => request => ws(ctx)(request))
+      )
+  }
+}
+```
+
+The websocket will have the context, and any step inputs available in the same way as get and post.
+
+The websocket currently only reads/writes Strings. If you require anything other than String, you will have to serialise/deserialise the payloads yourself.
+
+Post will still have to be called to advance to the next step, so you will have to ensure that any data is included in the post which you want to be included in the step output.
+
 
 ## TODO
 
-* Document websocket support
 * Support caching the future results in the same way as step results (may rething the flow syntax to homogenise)
