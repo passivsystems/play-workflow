@@ -15,8 +15,8 @@ object Workflow extends cats.Monad[Workflow] {
    *  @param reader defines how to read the step result out of the session
    *  @param writer defines how to write the step result to the session
    */
-  def step[A](label: String, step: Step[A])(implicit reader: upickle.default.Reader[A], writer: upickle.default.Writer[A], ec: ExecutionContext): Workflow[A] =
-    FreeT.liftF[WorkflowSyntax, Future, A](WorkflowSyntax.WSStep[A,A](label, step, reader, writer, identity))
+  def step[A](label: String, step: Step[A])(implicit serialiser: Serialiser[A], ec: ExecutionContext): Workflow[A] =
+    FreeT.liftF[WorkflowSyntax, Future, A](WorkflowSyntax.WSStep[A,A](label, step, serialiser, identity))
 
 
   // workflow cannot be a monadPlus unless A is a Monoid...

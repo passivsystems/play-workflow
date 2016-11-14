@@ -39,15 +39,31 @@ package object workflow extends cats.instances.FutureInstances {
 
   private [workflow] sealed trait WorkflowSyntax[+Next]
   object WorkflowSyntax {
-    case class WSStep[A, Next](label: String, step: Step[A], reader: upickle.default.Reader[A], writer: upickle.default.Writer[A], next: A => Next) extends WorkflowSyntax[Next]
+    case class WSStep[A, Next](label: String, step: Step[A], serialiser: Serialiser[A], next: A => Next) extends WorkflowSyntax[Next]
   }
 
   private [workflow] implicit val workflowSyntaxFunctor: Functor[WorkflowSyntax] = new Functor[WorkflowSyntax] {
     def map[A, B](fa: WorkflowSyntax[A])(f: A => B): WorkflowSyntax[B] = fa match {
-      case ws: WorkflowSyntax.WSStep[_, A] => WorkflowSyntax.WSStep(ws.label, ws.step, ws.reader, ws.writer, ws.next andThen f)
+      case ws: WorkflowSyntax.WSStep[_, A] => WorkflowSyntax.WSStep(ws.label, ws.step, ws.serialiser, ws.next andThen f)
     }
   }
 
   /** Defines a sequence of steps to be executed */
   type Workflow[A] = FreeT[WorkflowSyntax, Future, A]
+
+  // Other strategies include:
+  //   provide session prefix or cookie name to engine, to segregate session for different flows
+  //   store to db
+  trait Serialiser[A] {
+    def serialise(a: A): String
+    def deserialise(s: String): Option[A]
+  }
+
+  /** serialiser which uses upickle deault Reader and Writer for storing step results in session */
+  object UpickleSerialiser {
+    implicit def serialiser[A](implicit reader: upickle.default.Reader[A], writer: upickle.default.Writer[A]): Serialiser[A] = new Serialiser[A] {
+      override def serialise(a: A) = upickle.default.write(a)(writer)
+      override def deserialise(s: String) = Some(upickle.default.read[A](s)(reader))
+    }
+  }
 }

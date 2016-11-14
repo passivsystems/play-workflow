@@ -1,6 +1,6 @@
 #Play - Workflow
 
-Workflow engine for Play! Framework.
+Workflow engine for Play! Framework (2.3.x).
 
 ## About
 
@@ -32,6 +32,7 @@ MyFlow:
 
 ```scala
 import workflow._
+import workflow.UpickleSerialiser._
 
 object MyFlow extends Controller{
 
@@ -160,9 +161,14 @@ The flow can be accessed at URL `/myflow/start` as defined in the routes file. T
 
 ## Serialisation
 
-Once a step has been completed (i.e. the post function returns a `Right`), the result is stored in the session, and the user may access steps further down the workflow.
+Once a step has been completed (i.e. the post function returns a `Right`), the result is stored for future requests, and the user may access steps further down the workflow.
 
-The step result is stored by [pickling](http://www.lihaoyi.com/upickle-pprint/upickle/).
+If the object to be stored can be pickled with [upickle](http://www.lihaoyi.com/upickle-pprint/upickle/), then the default serialiser can be used to store the result in a cookie.
+```
+import workflow.UpickleSerialiser._
+```
+You can provide your own serialiser, by implementing the trait `workflow.Serialiser` to provide different behaviour. E.g. store in database.
+
 If the session cannot be restored, (e.g. changed domain objects), the session will be cleared, and the flow started from the beginning.
 
 ## Navigation
@@ -270,5 +276,5 @@ for {
 
 ## TODO
 
-* Allow custom session storing strategies (e.g. to database)
-  * Provide session prefix or cookie name to engine, to segregate session for different flows
+* Document websocket support
+* Support caching the future results in the same way as step results (may rething the flow syntax to homogenise)
