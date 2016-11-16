@@ -1,6 +1,6 @@
 package workflow
 
-import cats.{Functor, Monad}
+import cats.{Applicative, Functor, Monad}
 import cats.data.EitherT
 import play.api.mvc.{Call, Request, RequestHeader, Result, WebSocket}
 
@@ -36,8 +36,20 @@ final case class StepT[F[_],A](
     updatePost(_.semiflatMap(f))
 }
 
+object StepT {
+  def pure[F[_], A](x: A)(implicit A: Applicative[F]): StepT[F, A] =
+    liftF(A.pure(x))
+
+  def liftF[F[_], A](f: F[A])(implicit A: Applicative[F]): StepT[F, A] =
+      StepT(
+        get  = (ctx: WorkflowContext[A]) => (req: Request[Any])  => A.pure[Option[Result]](None),
+        post = (ctx: WorkflowContext[A]) => (req: Request[Any])  => A.map(f)(Right(_): Either[Result,A]),
+        ws   = (ctx: WorkflowContext[A]) => (req: RequestHeader) => A.pure[Option[WebSocket[String,String]]](None))
+}
+
 trait StepTInstances {
-  implicit def catsFunctorForStepT[F[_]](implicit F0: Functor[F]) = new StepTFunctor[F] { implicit val F = F0 }
+  implicit def catsFunctorForStepT[F[_]](implicit F0: Functor[F]) =
+    new StepTFunctor[F] { implicit val F = F0 }
   private [workflow] sealed trait StepTFunctor[F[_]] extends Functor[StepT[F, ?]] {
     implicit def F: Functor[F]
     def map[A, B](fa: StepT[F,A])(f: A => B): StepT[F,B] = fa.map(f)

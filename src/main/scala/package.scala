@@ -22,12 +22,12 @@ package object workflow {
 
   private [workflow] sealed trait WorkflowSyntax[+Next]
   private [workflow] object WorkflowSyntax {
-    case class WSStep[A, Next](label: String, step: Step[A], serialiser: Serialiser[A], next: A => Next) extends WorkflowSyntax[Next]
+    case class WSStep[A, Next](label: String, step: Step[A], serialiser: Serialiser[A], cache: Boolean, next: A => Next) extends WorkflowSyntax[Next]
   }
 
   private [workflow] implicit val workflowSyntaxFunctor: Functor[WorkflowSyntax] = new Functor[WorkflowSyntax] {
     def map[A, B](fa: WorkflowSyntax[A])(f: A => B): WorkflowSyntax[B] = fa match {
-      case ws: WorkflowSyntax.WSStep[_, A] => WorkflowSyntax.WSStep(ws.label, ws.step, ws.serialiser, ws.next andThen f)
+      case ws: WorkflowSyntax.WSStep[_, A] => WorkflowSyntax.WSStep(ws.label, ws.step, ws.serialiser, ws.cache, ws.next andThen f)
     }
   }
 
@@ -68,7 +68,10 @@ package object workflow {
      *  @param writer defines how to write the step result to the session
      */
     def step[A](label: String, step: Step[A])(implicit serialiser: Serialiser[A], ec: ExecutionContext): Workflow[A] =
-      FreeT.liftF[WorkflowSyntax, Future, A](WorkflowSyntax.WSStep[A,A](label, step, serialiser, identity))
+      FreeT.liftF[WorkflowSyntax, Future, A](WorkflowSyntax.WSStep[A,A](label, step, serialiser, false, identity))
+
+    def cache[A](label: String, step: Step[A])(implicit serialiser: Serialiser[A], ec: ExecutionContext): Workflow[A] =
+      FreeT.liftF[WorkflowSyntax, Future, A](WorkflowSyntax.WSStep[A,A](label, step, serialiser, true, identity))
 
     def liftF[A](f: Future[A])(implicit ec: ExecutionContext): Workflow[A] =
       FreeT.liftTU(f)
@@ -101,11 +104,21 @@ package object workflow {
   object Step {
     implicit val ec = play.api.libs.concurrent.Execution.defaultContext
     def apply[A](
-      get:  WorkflowContext[A] => Request[Any]  => Future[Option[Result]],
+      get:  WorkflowContext[A] => Request[Any]  => Future[Option[Result]] =
+        (ctx: WorkflowContext[A]) => (req: RequestHeader) => Future(None),
       post: WorkflowContext[A] => Request[Any]  => Future[Either[Result, A]],
       ws:   WorkflowContext[A] => RequestHeader => Future[Option[WebSocket[String, String]]] =
         (ctx: WorkflowContext[A]) => (req: RequestHeader) => Future(None)) =
         StepT[Future, A](get, post, ws)
+
+   def pure[A](x: A)(implicit A: Applicative[Future]): Step[A] =
+     StepT.pure[Future, A](x)
+
+    def liftF[A](f: Future[A])(implicit F: Applicative[Future]): Step[A] =
+      StepT.liftF(f)
+
+    def liftFE[A](f: Future[Either[Result,A]]): Step[A] =
+      Step(post = (ctx: WorkflowContext[A]) => (req: Request[Any]) => f)
   }
 
   trait AllInstances

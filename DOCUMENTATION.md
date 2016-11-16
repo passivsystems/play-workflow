@@ -6,10 +6,15 @@
 
 Once a step has been completed (i.e. the post function returns a `Right`), the result is stored for future requests, and the user may access steps further down the workflow.
 
-If the object to be stored can be pickled with [upickle](http://www.lihaoyi.com/upickle-pprint/upickle/), then the default serialiser can be used:
+If the object to be stored can be pickled with [upickle](http://www.lihaoyi.com/upickle-pprint/upickle/), then the default serialiser can be used. Imported with:
+```scala
+import workflow.implicits._
 ```
+or explicitly:
+```scala
 import workflow.UpickleSerialiser._
 ```
+
 You can provide your own serialiser, by implementing the trait `workflow.Serialiser` to provide different behaviour, and making sure the serialiser is implicitly available.
 
 As well as indicating how to serialise an individual step object, a storage strategy can be defined. The predefined storages are:
@@ -117,8 +122,11 @@ for {
 ```
 which would raise a MatchException if the case match fails.
 
+### Executing futures in workflows
 
-Workflows are internally built as a transformer on top of Future, so we can also lift future actions into the Workflow:
+* `Workflow.liftF`
+
+We can lift any future into the workflow with `Workflow.liftF`:
 
 ```scala
 def getBooleanFromApi(): Future[Boolean] = ???
@@ -127,8 +135,67 @@ for {
   yes1 <- Workflow.liftF(getBooleanFromApi())
   yes2 <- if (yes1) Workflow.step("choose2", ChooseStep())
           else      Workflow.pure(true)
-}
+} yield yes2
 ```
+
+The future is will be invoked on each submit.
+
+* `Step.liftF`
+
+Another option is to create a step out of a Future using `Step.liftF`. The step can be included in the workflow like any other step:
+
+```scala
+for {
+  yes1 <- Workflow.step("choose1", Step.liftF(getBooleanFromApi()))
+  yes2 <- if (yes1) Workflow.step("choose2", ChooseStep())
+          else      Workflow.pure(true)
+} yield yes2
+```
+Since step takes a label, the result of the future will be stored in the session like any other step result.
+
+This will cause problems when going back, since a back from step "choose2" will repeat the future "choose1".
+
+* `Workflow.cache`
+
+A better option is to include the Step with `Workflow.cache` instead of `Workflow.step`. This will cache the result of the step, but will be skipped when we call `ctx.actionPrevious`:
+
+```scala
+for {
+  yes1 <- Workflow.cache("choose1", Step.liftF(getBooleanFromApi()))
+  yes2 <- if (yes1) Workflow.step("choose2", ChooseStep())
+          else      Workflow.pure(true)
+} yield yes2
+```
+
+### Transforming step results
+
+The result of a Step may be mapped before the result is stored.
+e.g.
+
+```scala
+def getBooleanFromApi(): Future[Boolean] = ???
+
+def workflow: Workflow[String] = for {
+  yes1            <- Workflow.step("choose1", ChooseStep()) // : Boolean
+  yes2Transformed <- Workflow.step("choose2", ChooseStep().map(yes2 -> if (yes2) "A" else "B")) // : String
+} yield yes2Transformed
+```
+Note, however, if we transform the output of a step before storing in the session, then when we return to step "choose2" (i.e. with `ctx.goto` or `ctx.actionPrevious`), since the value stored in the session is a String, the `ctx.previousObject` will be None since it requires a Boolean. (This would break the Functor laws)
+
+In addition to `map`, there is `semiflatMap` which takes `f: A => Future[B]`.
+
+Given the problem with returning to the step, it is probably better to transform the result as a separate workflow step, using `Step.pure`. E.g.:
+
+```scala
+def getBooleanFromApi(): Future[Boolean] = ???
+
+def workflow: Workflow[String] = for {
+  yes1 <- Workflow.step("choose1", ChooseStep()) // : Boolean
+  yes2 <- Workflow.step("choose2", ChooseStep()) // : Boolean
+  yes2Transformed <- Workflow.cache("choose2-transform", Step.pure(if (yes2) "A" else "B")) // : String  
+} yield yes2Transformed
+```
+
 
 ### Web Sockets
 
@@ -175,24 +242,3 @@ The websocket will have the context, and any step inputs available in the same w
 The websocket currently only reads/writes Strings. If you require anything other than String, you will have to serialise/deserialise the payloads yourself.
 
 Post will still have to be called to advance to the next step, so you will have to ensure that any data is included in the post which you want to be included in the step output.
-
-### Transforming step results
-
-Steps are functors, so the result map be mapped before the result is stored.
-e.g.
-
-```scala
-def getBooleanFromApi(): Future[Boolean] = ???
-
-def workflow: Workflow[String] = for {
-  res1 <- Workflow.step("choose1", ChooseStep()) // : Boolean
-  res2 <- Workflow.step("choose2", ChooseStep().map(yes2 -> if (yes2) "A" else "B")) // : String
-} yield res2
-```
-Note, however, if we transform the output of a step before storing in the session, then when we return to step "choose2" (i.e. with `ctx.goto` or `ctx.actionPrevious`), since the value stored in the session is a String, the `ctx.previousObject` will be None since it requires a Boolean.
-
-In addition to `map`, there is `semiflatMap` which takes `f: A => Future[B]`.
-
-### TODO
-
-* Support mapping f: A => Future[Result,B] ?

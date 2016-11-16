@@ -32,7 +32,7 @@ object WorkflowExecutor {
              clear the session and redirect to the first stepId in the workflow.
    */
   def getWorkflow[A](wfc: WorkflowConf[A], stepId: String)(implicit request: Request[Any], ec: ExecutionContext): Future[Result] = {
-    logger.warn(s"getWorkflow $stepId")
+    logger.debug(s"getWorkflow $stepId")
     if (stepId == "start") {
       nextLabel(wfc.workflow).map {
         case Some(initialStep) => wfc.dataStorage.withNewSession(ResultsImpl.Redirect(wfc.router.get(initialStep).url, request.queryString))
@@ -48,20 +48,23 @@ object WorkflowExecutor {
 
   // TODO refactor commonality between doGet/doPost - trouble with existential type
   //      also the unchecked type in match - required for compilation (we know they match)
-  private def doGet[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: Request[Any], ec: ExecutionContext): Future[Option[Result]] =
+  // is tail recursive since recursion happend asynchronously
+  private def doGet[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: Request[Any], ec: ExecutionContext): Future[Option[Result]] = {
+    logger.debug(s"doGet $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doGet: flow finished!") // flow has finished (only will happen if last step has a post)
       case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
-        logger.warn(s"doGet $targetLabel")
         if (ws.label == targetLabel) {
           val optB = optDataFor(ws.label, wfc.dataStorage, ws.serialiser)
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
           ws.step.get(ctx)(request)
         } else {
           val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          doGet(wfc, targetLabel, Some(ws.label), ws.next(b))
+          val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
+          doGet(wfc, targetLabel, nextPreviousLabel, ws.next(b))
         }
     }
+  }
 
   /** Will execute a workflow and return an Action result. The POST request will be
    *  directed to the indicated stepId.
@@ -70,15 +73,16 @@ object WorkflowExecutor {
    *  @param stepId the current step position.
    */
   def postWorkflow[A](wfc: WorkflowConf[A], stepId: String)(implicit request: Request[Any], ec: ExecutionContext): Future[Result] = {
-    logger.warn(s"postWorkflow $stepId")
+    logger.debug(s"postWorkflow $stepId")
     doPost(wfc, stepId, None, wfc.workflow)
   }
 
-  private def doPost[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: Request[Any], ec: ExecutionContext): Future[Result] =
+  // is tail recursive since recursion happend asynchronously
+  private def doPost[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: Request[Any], ec: ExecutionContext): Future[Result] = {
+    logger.debug(s"doPost $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doPost: flow finished!") // flow has finished (only will happen if last step has a post)
       case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
-        logger.warn(s"doPost $targetLabel")
         if (ws.label == targetLabel) {
           val optB = optDataFor(ws.label, wfc.dataStorage, ws.serialiser)
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
@@ -96,9 +100,11 @@ object WorkflowExecutor {
           }
         } else {
           val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          doPost(wfc, targetLabel, Some(ws.label), ws.next(b))
+          val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
+          doPost(wfc, targetLabel, nextPreviousLabel, ws.next(b))
         }
     }
+  }
 
   private type WS[A,B] = scala.concurrent.Future[Either[play.api.mvc.Result,(play.api.libs.iteratee.Enumerator[A], play.api.libs.iteratee.Iteratee[B,Unit]) => Unit]]
 
@@ -110,25 +116,29 @@ object WorkflowExecutor {
    *  @param stepId the current step position.
    */
   def wsWorkflow[A](wfc: WorkflowConf[A], currentLabel: String)(implicit request: RequestHeader, ec: ExecutionContext): WS[String, String] = {
-    logger.warn(s"wsWorkflow $currentLabel")
+    logger.debug(s"wsWorkflow $currentLabel")
     doWs(wfc, currentLabel, None, wfc.workflow).flatMap {
       case WebSocket(f) => f(request)
     }
   }
 
-  private def doWs[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: RequestHeader, ec: ExecutionContext): Future[WebSocket[String, String]] =
+  // is tail recursive since recursion happend asynchronously
+  private def doWs[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: RequestHeader, ec: ExecutionContext): Future[WebSocket[String, String]] = {
+    logger.debug(s"doWs $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doWs: flow finished!") // flow has finished (only will happen if last step has a post)
       case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
-        logger.warn(s"doWs $targetLabel")
         if (ws.label == targetLabel) {
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, None)
           ws.step.ws(ctx)(request).map(_.getOrElse(sys.error(s"No ws defined for step ${ws.label}")))
         } else {
           val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          doWs(wfc, targetLabel, Some(ws.label), ws.next(b))
+          val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
+          Right((wfc, targetLabel, nextPreviousLabel, ws.next(b)))
+          doWs(wfc, targetLabel, nextPreviousLabel, ws.next(b))
         }
     }
+  }
 
   private def dataFor[A](label: String, dataStorage: DataStorage, serialiser: Serialiser[A])(implicit request: RequestHeader): A =
     optDataFor(label, dataStorage, serialiser).getOrElse(sys.error(s"invalid state - should have stored result for step $label"))
@@ -136,9 +146,10 @@ object WorkflowExecutor {
   private def optDataFor[A](label: String, dataStorage: DataStorage, serialiser: Serialiser[A])(implicit request: RequestHeader): Option[A] =
     dataStorage.readData(label).flatMap(serialiser.deserialise(_))
 
-  private def nextLabel[A](wf: Workflow[A])(implicit ec: ExecutionContext): Future[Option[String]] =
+  private def nextLabel[A](wf: Workflow[A])(implicit ec: ExecutionContext): Future[Option[String]] = {
     wf.resume.map {
       case Left(ws: WorkflowSyntax.WSStep[_, _]) => Some(ws.label)
       case err                                   => None
     }
+  }
 }
