@@ -1,4 +1,4 @@
-#Play - Workflow
+# Play - Workflow
 
 Workflow engine for Play! Framework (2.3.x).
 
@@ -10,7 +10,7 @@ A workflow is composed of steps, which are like mini-controllers. Once a step ha
 
 The workflow is monadic and can be defined with for-comprehensions.
 
-## Add to sbt project
+### Add to sbt project
 
 add the following to build.sbt:
 ```scala
@@ -18,7 +18,7 @@ libraryDependencies += "com.github.passivsystems" % "play-workflow" % "0.0.1-SNA
 resolvers += "jitpack" at "https://jitpack.io"
 ```
 
-##Example
+### Example
 
 routes:
 ```
@@ -154,185 +154,10 @@ Here, the first step contains a simple form to capture some data. This data is t
 
 The steps do not need to know which steps came before, or which come after, as long as their data inputs are met. This means that steps can be reused in new flows.
 
-## Running
+### Running
 
 The flow can be accessed at URL `/myflow/start` as defined in the routes file. This is an alias to the first step in the flow, which is `/myflow/step1` in this case. Page two is `/myflow/step2`. In addition to being an alias, the `start` step will clear the session of data from previous runs.
 
+### Documentation
 
-## Serialisation
-
-Once a step has been completed (i.e. the post function returns a `Right`), the result is stored for future requests, and the user may access steps further down the workflow.
-
-If the object to be stored can be pickled with [upickle](http://www.lihaoyi.com/upickle-pprint/upickle/), then the default serialiser can be used:
-```
-import workflow.UpickleSerialiser._
-```
-You can provide your own serialiser, by implementing the trait `workflow.Serialiser` to provide different behaviour, and making sure the serialiser is implicitly available.
-
-As well as indicating how to serialise an individual step object, a storage strategy can be defined. The predefined storages are:
-* `SessionStorage` - which uses Play's default session which stores the data in a cookie. Each step has it's data stored as a new key, and starting a new flow will wipe the whole session. This is the default.
-* `SubSessionStorage` - this is similar to SessionStorage apart from a key is required, and all session data is stored under this key. This allows the data to participate with existing session data, including other flows if the key is unique. When a new flow is started, only the data under the key is wiped.
-* `GzippedSessionStorage` - this is the same as `SessionStorage` apart from the data is also compressed with gzip.
-The storage can be set in the WorkflowConf:
-```scala
-  val wfc = WorkflowConf[Unit](
-    workflow    = workflow(auth),
-    dataStorage = SubSessionStorage("myflow"),
-    router      = routes.MyFlow)
-```
-Custom storage, e.g. to store in database, can be created by importing the trait `DataStorage`.
-
-If the session cannot be restored, (e.g. changed domain objects), the data will be cleared, and the flow started from the beginning.
-
-## Navigation
-
-The steps are provided a `WorkflowContext[A]` (where `A` refers to the result of the step) which can be used for navigation.
-* `ctx.actionCurrent` is the current step - forms and buttons should post to this to invoke the post function, and navigation will advance if the post function is successful.
-* `ctx.actionPrevious` is the previous step - buttons can use this to go back a page. Note, actionPrevious returns an `Option[Call]`` since not all pages can go back (i.e. the first page)
-* `ctx.restart` returns a `Call` pointing to the first page. In addition, it will clear the session. This may be useful to restart from error pages.
-* `ctx.goto("step1")` - returns a `Call` to a step using its identifier. This should be used with caution, since it will only work if the step is defined in the current flow, and all the previous steps have been completed (results in session).
-
-## Security
-
-The workflow has no special handling of security. The controller is responsible for checking authentication before calling the WorkflowExecutor. Any authenticated data can be fed into the flow as required, to be available to steps.
-
-e.g.
-
-```scala
-import workflow._
-import workflow.WorkflowExecutor._
-import workflow.Workflow.step
-object MySecureFlow extends AuthController {
-
-  def workflow(auth: Auth): Workflow[Unit] =
-    for {
-      step1Result     <- step("step1",     Step1(auth))
-      _               <- step("step2",     Step2(auth, step1Result))
-    } yield ()
-
-  def wfc(auth: Auth) = WorkflowConf[Unit](
-    workflow    = workflow(auth),
-    router      = routes.MySecureFlow)
-
-  def get(stepId: String) = Action.async { implicit request =>
-    checkAuth().flatMap {
-      case Left(r)     => Future(r)
-      case Right(auth) => getWorkflow(wfc(auth), stepId)
-    }
-  }
-  def post(stepId: String) = Action.async { implicit request =>
-    checkAuth().flatMap {
-      case Left(r)     => Future(r)
-      case Right(auth) => postWorkflow(wfc(auth), stepId)
-    }
-  }
-
-  def start() = get("start")
-}
-```
-
-where AuthController provides `checkAuth(): Future[Either[Result,Auth]]` - which returns either a redirect to a login page, or the authenticated user.
-
-
-## Monadic Workflow
-
-Since workflows are monads, they are composable, and can be reused.
-
-```scala
-val workflow1: Workflow[Step1Result] = step("step1", Step1())
-
-def workflow2(step1Result: Step1Result): Workflow[(Step2Result,Step3Result)] = for {
-  step2Result <- step("step2", Step2(step1Result))
-  step3Result <- step("step3", Step3(step1Result, step2Result))
-} yield (step2Result, step3Result)
-
-val workflow3: Workflow[Unit] = for {
-  step1Result     <- workflow1
-  step1And2Result <- workflow2(step1Result)
-} yield ()
-```
-
-However, note that workflows are not MonadPlus and do not define `empty` or `filter`. What this means is that we cannot write an `if` filter without providing an `else`. The following uses `Workflow.pure(a)` to return a result as if a step were successful:
-
-```scala
-for {
-  yes1 <- step("choose", ChooseStep())
-  yes2 <- if (yes1) step("choose2"), ChooseStep())
-          else      Workflow.pure(true)
-}
-```
-
-
-
-And we cannot case match results like `Step1Result(name) <- step("step1", Step1Result())`, which would result in the monadic empty. We have to do the following:
-```scala
-for {
-  step1Result <- step("step1", Step1Result())
-  Step1Result(name) = step1Result
-}
-```
-which would raise a MatchException if the case match fails.
-
-
-Workflows are internally built as a transformer on top of Future, so we can also lift future actions into the Workflow:
-
-```scala
-def getBooleanFromApi(): Future[Boolean] = ???
-
-for {
-  yes1 <- Workflow.liftF(getBooleanFromApi())
-  yes2 <- if (yes1) Workflow.step("choose2"), ChooseStep())
-          else      Workflow.pure(true)
-}
-```
-
-## Web Sockets
-
-Steps can use websockets.
-First register the endpoint in routes:
-```scala
-GET     /install/:stepKey/ws        MyFlow.ws(stepKey)
-```
-
-and add the endpoint to the controller:
-```scala
-object MyFlow extends Controller {
-  // ...
-  def ws(stepId: String) = WebSocket[String, String] { implicit request =>
-    WorkflowExecutor.wsWorkflow(wfc, stepId)
-  }
-}
-```
-The weboscket only needs to be added to steps where it is relevant. However a call to the websocket url for a step which has not been implemented will fail:
-
-```scala
-import play.api.Play.current
-object MyStep extends Controller {
-  def apply(): Step[StepOut] {
-
-    // ..
-
-    def ws(ctx: WorkflowContext[StepOut])(implicit request: RequestHeader) =
-      WebSocket.acceptWithActor[String, String] { implicit request => out =>
-      akka.actor.Props(new MyStepActor(out))
-    }
-
-    Step[StepOut](
-        get  = ???,
-        post = ???,
-        ws = Some(ctx => request => ws(ctx)(request))
-      )
-  }
-}
-```
-
-The websocket will have the context, and any step inputs available in the same way as get and post.
-
-The websocket currently only reads/writes Strings. If you require anything other than String, you will have to serialise/deserialise the payloads yourself.
-
-Post will still have to be called to advance to the next step, so you will have to ensure that any data is included in the post which you want to be included in the step output.
-
-
-## TODO
-
-* Support caching the future results in the same way as step results (may rething the flow syntax to homogenise)
+More details are available in [DOCUMENTATION.md](DOCUMENTATION.md).

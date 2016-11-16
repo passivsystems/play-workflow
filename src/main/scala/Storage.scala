@@ -1,18 +1,13 @@
 package workflow
 
-/** serialiser which uses upickle deault Reader and Writer for storing step results in session */
-object UpickleSerialiser {
-  implicit def serialiser[A](implicit reader: upickle.default.Reader[A], writer: upickle.default.Writer[A]): Serialiser[A] = new Serialiser[A] {
-    override def serialise(a: A) = upickle.default.write(a)(writer)
-    override def deserialise(s: String) = scala.util.Try {
-        upickle.default.read[A](s)(reader)
-      }.recoverWith {
-        case ex: Throwable => play.api.Logger.warn(s"Error deserializing session cookie: ${ex.getMessage}", ex); scala.util.Failure(ex)
-      }.toOption
-  }
-}
-
 import play.api.mvc.{RequestHeader, Result}
+
+/** Defines how to store/restore serialised step objects */
+trait DataStorage {
+  def withNewSession(result: Result)(implicit request: RequestHeader): Result
+  def withUpdatedSession(result: Result, key: String, s: String)(implicit request: RequestHeader): Result
+  def readData(key: String)(implicit request: RequestHeader): Option[String]
+}
 
 /** Uses Play's default session which stores the data in a cookie.
  *  Each step has it's data stored as a new key.

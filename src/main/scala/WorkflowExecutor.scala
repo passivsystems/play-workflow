@@ -11,6 +11,8 @@ object WorkflowExecutor {
 
   private object ResultsImpl extends play.api.mvc.Results
 
+  import implicits._
+
   private def mkWorkflowContext[A](wfc: WorkflowConf[A], label: String, previousLabel: Option[String], optB: Option[A]): WorkflowContext[A] = {
     val actionCurrent = wfc.router.post(label)
     WorkflowContext(
@@ -121,7 +123,7 @@ object WorkflowExecutor {
         logger.warn(s"doWs $targetLabel")
         if (ws.label == targetLabel) {
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, None)
-          Future(ws.step.ws.getOrElse(sys.error(s"No ws defined for step ${ws.label}"))(ctx)(request))
+          ws.step.ws(ctx)(request).map(_.getOrElse(sys.error(s"No ws defined for step ${ws.label}")))
         } else {
           val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
           doWs(wfc, targetLabel, Some(ws.label), ws.next(b))

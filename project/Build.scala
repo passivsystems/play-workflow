@@ -15,7 +15,8 @@ object ApplicationBuild extends Build {
       libraryDependencies ++= Seq(
         "com.lihaoyi"   %% "upickle"     % "0.4.1",
         "org.typelevel" %% "cats-core"   % "0.8.1",
-        "org.typelevel" %% "cats-free"   % "0.8.1"
+        "org.typelevel" %% "cats-free"   % "0.8.1",
+        compilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3")
       ),
       scalaSource in Compile := baseDirectory.value / "src/main/scala"
     ).
