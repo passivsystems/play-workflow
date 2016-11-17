@@ -2,7 +2,8 @@ package workflow
 
 import cats.{Applicative, Functor, Monad}
 import cats.data.EitherT
-import play.api.mvc.{Call, Request, RequestHeader, Result, WebSocket}
+import play.api.mvc.{Request, RequestHeader, Result, WebSocket}
+
 
 /** A single step in a Workflow.
  *  @constructor create a new Step with get, post and optionally ws.
@@ -19,7 +20,7 @@ final case class StepT[F[_],A](
   ws:   WorkflowContext[A] => RequestHeader => F[Option[WebSocket[String, String]]]  // TODO support any input, output (not just String) if a reader and writer are provided.
 ) {
   // help! need to transform b back to a! Do we need to store the original object in the session?
-  private def t[A,B](ctx: WorkflowContext[B]): WorkflowContext[A] =
+  private def t[B,C](ctx: WorkflowContext[B]): WorkflowContext[C] =
     ctx.copy(stepObject = None)
 
   private def updatePost[B](update: EitherT[F, Result, A] => EitherT[F, Result, B]): StepT[F,B] =

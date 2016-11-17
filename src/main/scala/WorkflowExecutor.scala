@@ -1,9 +1,11 @@
 package workflow
 
 import scala.concurrent.{ExecutionContext, Future}
-import cats.free.FreeT
 import play.api.Logger
-import play.api.mvc.{Call, Request, RequestHeader, Result, Session, WebSocket}
+import play.api.mvc.{Request, RequestHeader, Result, WebSocket}
+
+import scala.language.reflectiveCalls
+
 
 object WorkflowExecutor {
 
@@ -53,7 +55,7 @@ object WorkflowExecutor {
     logger.debug(s"doGet $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doGet: flow finished!") // flow has finished (only will happen if last step has a post)
-      case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
+      case Left(ws: WorkflowSyntax.WSStep[A @unchecked,_]) =>
         if (ws.label == targetLabel) {
           val optB = optDataFor(ws.label, wfc.dataStorage, ws.serialiser)
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
@@ -82,7 +84,7 @@ object WorkflowExecutor {
     logger.debug(s"doPost $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doPost: flow finished!") // flow has finished (only will happen if last step has a post)
-      case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
+      case Left(ws: WorkflowSyntax.WSStep[A @unchecked,_]) =>
         if (ws.label == targetLabel) {
           val optB = optDataFor(ws.label, wfc.dataStorage, ws.serialiser)
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
@@ -127,7 +129,7 @@ object WorkflowExecutor {
     logger.debug(s"doWs $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doWs: flow finished!") // flow has finished (only will happen if last step has a post)
-      case Left(ws: WorkflowSyntax.WSStep[A,_]) =>
+      case Left(ws: WorkflowSyntax.WSStep[A @unchecked,_]) =>
         if (ws.label == targetLabel) {
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, None)
           ws.step.ws(ctx)(request).map(_.getOrElse(sys.error(s"No ws defined for step ${ws.label}")))
