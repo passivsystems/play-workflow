@@ -6,13 +6,15 @@ import PlayKeys._
 
 object ApplicationBuild extends Build {
 
+  lazy val workflowVersion = "0.0.1"
+
   lazy val catsVersion = "0.8.1"
 
   lazy val root = (project in file(".")).
     settings(
       organization := "com.passivsystems",
       name         := "play-workflow",
-      version      := "0.0.1-SNAPSHOT",
+      version      := workflowVersion,
       scalaVersion := "2.11.8",
       libraryDependencies ++= Seq(
         "com.lihaoyi"   %% "upickle"     % "0.4.1",
