@@ -15,7 +15,7 @@ object WorkflowExecutor {
 
   import implicits._
 
-  private def mkWorkflowContext[A](wfc: WorkflowConf[A], label: String, previousLabel: Option[String], optB: Option[A]): WorkflowContext[A] = {
+  private def mkWorkflowContext[A,B](wfc: WorkflowConf[A], label: String, previousLabel: Option[String], optB: Option[B]): WorkflowContext[B] = {
     val actionCurrent = wfc.router.post(label)
     WorkflowContext(
       actionCurrent  = actionCurrent,
@@ -55,15 +55,15 @@ object WorkflowExecutor {
     logger.debug(s"doGet $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doGet: flow finished!") // flow has finished (only will happen if last step has a post)
-      case Left(ws: WorkflowSyntax.WSStep[A @unchecked,_]) =>
-        if (ws.label == targetLabel) {
-          val optB = optDataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
-          ws.step.get(ctx)(request)
+      case Left(WorkflowSyntax.WSStep(label, step, serialiser, cache, next)) =>
+        if (label == targetLabel) {
+          val optB = optDataFor(label, wfc.dataStorage, serialiser)
+          val ctx = mkWorkflowContext(wfc, label, previousLabel, optB)
+          step.get(ctx)(request)
         } else {
-          val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
-          doGet(wfc, targetLabel, nextPreviousLabel, ws.next(b))
+          val b = dataFor(label, wfc.dataStorage, serialiser)
+          val nextPreviousLabel = if (cache) previousLabel else Some(label)
+          doGet(wfc, targetLabel, nextPreviousLabel, next(b))
         }
     }
   }
@@ -79,31 +79,31 @@ object WorkflowExecutor {
     doPost(wfc, stepId, None, wfc.workflow)
   }
 
-  // is tail recursive since recursion happend asynchronously
+  // is tail recursive since recursion happens asynchronously
   private def doPost[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: Request[Any], ec: ExecutionContext): Future[Result] = {
     logger.debug(s"doPost $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doPost: flow finished!") // flow has finished (only will happen if last step has a post)
-      case Left(ws: WorkflowSyntax.WSStep[A @unchecked,_]) =>
-        if (ws.label == targetLabel) {
-          val optB = optDataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
-          ws.step.post(ctx)(request).flatMap {
-            case Left(r)  => logger.warn(s"$ws.label returning result"); Future(r)
-            case Right(a) => logger.warn(s"putting ${ws.label} -> $a in session")
-                             nextLabel(ws.next(a)).map {
+      case Left(WorkflowSyntax.WSStep(label, step, serialiser, cache, next)) =>
+        if (label == targetLabel) {
+          val optB = optDataFor(label, wfc.dataStorage, serialiser)
+          val ctx = mkWorkflowContext(wfc, label, previousLabel, optB)
+          step.post(ctx)(request).flatMap {
+            case Left(r)  => logger.warn(s"$label returning result"); Future(r)
+            case Right(a) => logger.warn(s"putting $label -> $a in session")
+                             nextLabel(next(a)).map {
                                case Some(next) => logger.warn(s"redirecting to $next")
                                                   wfc.dataStorage.withUpdatedSession(
-                                                    ResultsImpl.Redirect(mkWorkflowContext(wfc, next, previousLabel, optB).actionCurrent),
-                                                    ws.label,
-                                                    ws.serialiser.serialise(a))
+                                                    ResultsImpl.Redirect(mkWorkflowContext(wfc, next, Some(label), optB).actionCurrent),
+                                                    label,
+                                                    serialiser.serialise(a))
                                case None       => sys.error("doPost: flow finished!")
                              }
           }
         } else {
-          val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
-          doPost(wfc, targetLabel, nextPreviousLabel, ws.next(b))
+          val b = dataFor(label, wfc.dataStorage, serialiser)
+          val nextPreviousLabel = if (cache) previousLabel else Some(label)
+          doPost(wfc, targetLabel, nextPreviousLabel, next(b))
         }
     }
   }
@@ -129,15 +129,15 @@ object WorkflowExecutor {
     logger.debug(s"doWs $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doWs: flow finished!") // flow has finished (only will happen if last step has a post)
-      case Left(ws: WorkflowSyntax.WSStep[A @unchecked,_]) =>
-        if (ws.label == targetLabel) {
-          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, None)
-          ws.step.ws(ctx)(request).map(_.getOrElse(sys.error(s"No ws defined for step ${ws.label}")))
+      case Left(WorkflowSyntax.WSStep(label, step, serialiser, cache, next)) =>
+        if (label == targetLabel) {
+          val optB = optDataFor(label, wfc.dataStorage, serialiser)
+          val ctx = mkWorkflowContext(wfc, label, previousLabel, optB)
+          step.ws(ctx)(request).map(_.getOrElse(sys.error(s"No ws defined for step $label")))
         } else {
-          val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
-          Right((wfc, targetLabel, nextPreviousLabel, ws.next(b)))
-          doWs(wfc, targetLabel, nextPreviousLabel, ws.next(b))
+          val b = dataFor(label, wfc.dataStorage, serialiser)
+          val nextPreviousLabel = if (cache) previousLabel else Some(label)
+          doWs(wfc, targetLabel, nextPreviousLabel, next(b))
         }
     }
   }
