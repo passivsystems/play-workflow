@@ -6,7 +6,7 @@ import PlayKeys._
 
 object ApplicationBuild extends Build {
 
-  lazy val version = "0.0.1"
+  lazy val version = "0.0.2-SNAPSHOT"
 
   lazy val catsVersion = "0.8.1"
 
