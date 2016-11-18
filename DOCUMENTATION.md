@@ -48,7 +48,7 @@ e.g.
 
 ```scala
 import workflow._
-import workflow.UpickleSerialiser._
+import workflow.implicits._
 import workflow.WorkflowExecutor._
 import workflow.Workflow.step
 object MySecureFlow extends AuthController {

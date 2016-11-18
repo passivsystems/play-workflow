@@ -6,7 +6,7 @@ import PlayKeys._
 
 object ApplicationBuild extends Build {
 
-  lazy val version = "0.0.2-SNAPSHOT"
+  lazy val appVersion = "0.0.2-SNAPSHOT"
 
   lazy val catsVersion = "0.8.1"
 
@@ -14,10 +14,10 @@ object ApplicationBuild extends Build {
     settings(
       organization := "com.passivsystems",
       name         := "play-workflow",
-      version      := version,
+      version      := appVersion,
       scalaVersion := "2.11.8",
       libraryDependencies ++= Seq(
-        "com.lihaoyi"   %% "upickle"     % "0.4.1",
+        "com.lihaoyi"   %% "upickle"     % "0.4.3",
         "org.typelevel" %% "cats-core"   % catsVersion,
         "org.typelevel" %% "cats-free"   % catsVersion,
         compilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3"),

@@ -15,7 +15,7 @@ object WorkflowExecutor {
 
   import implicits._
 
-  private def mkWorkflowContext[A](wfc: WorkflowConf[A], label: String, previousLabel: Option[String], optB: Option[A]): WorkflowContext[A] = {
+  private def mkWorkflowContext[A,B](wfc: WorkflowConf[A], label: String, previousLabel: Option[String], optB: Option[B]): WorkflowContext[B] = {
     val actionCurrent = wfc.router.post(label)
     WorkflowContext(
       actionCurrent  = actionCurrent,
@@ -55,15 +55,19 @@ object WorkflowExecutor {
     logger.debug(s"doGet $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doGet: flow finished!") // flow has finished (only will happen if last step has a post)
-      case Left(ws: WorkflowSyntax.WSStep[A @unchecked,_]) =>
+      case Left(ws: WorkflowSyntax.WSStep[_,_]) =>
+        val optB = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
         if (ws.label == targetLabel) {
-          val optB = optDataFor(ws.label, wfc.dataStorage, ws.serialiser)
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
           ws.step.get(ctx)(request)
         } else {
-          val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
-          doGet(wfc, targetLabel, nextPreviousLabel, ws.next(b))
+          optB match {
+            case Some(b) => val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
+                            doGet(wfc, targetLabel, nextPreviousLabel, ws.next(b))
+            case None    => logger.warn(s"client requested $targetLabel, but they only have data for ${ws.label}")
+                            // TODO can we just backtrack, rather than rerun?
+                            doGet(wfc, ws.label, None, wfc.workflow)
+          }
         }
     }
   }
@@ -84,9 +88,9 @@ object WorkflowExecutor {
     logger.debug(s"doPost $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doPost: flow finished!") // flow has finished (only will happen if last step has a post)
-      case Left(ws: WorkflowSyntax.WSStep[A @unchecked,_]) =>
+      case Left(ws: WorkflowSyntax.WSStep[_,_]) =>
+        val optB = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
         if (ws.label == targetLabel) {
-          val optB = optDataFor(ws.label, wfc.dataStorage, ws.serialiser)
           val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
           ws.step.post(ctx)(request).flatMap {
             case Left(r)  => logger.warn(s"$ws.label returning result"); Future(r)
@@ -101,9 +105,13 @@ object WorkflowExecutor {
                              }
           }
         } else {
-          val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
-          doPost(wfc, targetLabel, nextPreviousLabel, ws.next(b))
+          optB match {
+            case Some(b) => val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
+                            doPost(wfc, targetLabel, nextPreviousLabel, ws.next(b))
+            case None    => logger.warn(s"client requested $targetLabel, but they only have data for ${ws.label}")
+                            // TODO can we just backtrack, rather than rerun?
+                            doPost(wfc, ws.label, None, wfc.workflow)
+          }
         }
     }
   }
@@ -129,23 +137,24 @@ object WorkflowExecutor {
     logger.debug(s"doWs $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doWs: flow finished!") // flow has finished (only will happen if last step has a post)
-      case Left(ws: WorkflowSyntax.WSStep[A @unchecked,_]) =>
+      case Left(ws: WorkflowSyntax.WSStep[_,_]) =>
+        val optB = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
         if (ws.label == targetLabel) {
-          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, None)
+          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
           ws.step.ws(ctx)(request).map(_.getOrElse(sys.error(s"No ws defined for step ${ws.label}")))
         } else {
-          val b = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
-          val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
-          Right((wfc, targetLabel, nextPreviousLabel, ws.next(b)))
-          doWs(wfc, targetLabel, nextPreviousLabel, ws.next(b))
+          optB match {
+            case Some(b) => val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
+                            doWs(wfc, targetLabel, nextPreviousLabel, ws.next(b))
+            case None    => logger.warn(s"client requested $targetLabel, but they only have data for ${ws.label}")
+                            // TODO can we just backtrack, rather than rerun?
+                            doWs(wfc, ws.label, None, wfc.workflow)
+          }
         }
     }
   }
 
-  private def dataFor[A](label: String, dataStorage: DataStorage, serialiser: Serialiser[A])(implicit request: RequestHeader): A =
-    optDataFor(label, dataStorage, serialiser).getOrElse(sys.error(s"invalid state - should have stored result for step $label"))
-
-  private def optDataFor[A](label: String, dataStorage: DataStorage, serialiser: Serialiser[A])(implicit request: RequestHeader): Option[A] =
+  private def dataFor[A](label: String, dataStorage: DataStorage, serialiser: Serialiser[A])(implicit request: RequestHeader): Option[A] =
     dataStorage.readData(label).flatMap(serialiser.deserialise(_))
 
   private def nextLabel[A](wf: Workflow[A])(implicit ec: ExecutionContext): Future[Option[String]] = {
