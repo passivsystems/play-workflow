@@ -49,24 +49,22 @@ object WorkflowExecutor {
   }
 
   // TODO refactor commonality between doGet/doPost - trouble with existential type
-  //      also the unchecked type in match - required for compilation (we know they match)
-  // is tail recursive since recursion happend asynchronously
+  // is tail recursive since recursion happens asynchronously
   private def doGet[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: Request[Any], ec: ExecutionContext): Future[Option[Result]] = {
     logger.debug(s"doGet $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doGet: flow finished!") // flow has finished (only will happen if last step has a post)
       case Left(ws: WorkflowSyntax.WSStep[_,_]) =>
         val optB = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
+        lazy val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
         if (ws.label == targetLabel) {
-          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
           ws.step.get(ctx)(request)
         } else {
           optB match {
             case Some(b) => val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
                             doGet(wfc, targetLabel, nextPreviousLabel, ws.next(b))
-            case None    => logger.warn(s"client requested $targetLabel, but they only have data for ${ws.label}")
-                            // TODO can we just backtrack, rather than rerun?
-                            doGet(wfc, ws.label, None, wfc.workflow)
+            case None    => logger.warn(s"client requested doGet $targetLabel, but they only have data for ${ws.label}")
+                            Future(Some(ResultsImpl.Redirect(ctx.actionCurrent)))
           }
         }
     }
@@ -83,15 +81,15 @@ object WorkflowExecutor {
     doPost(wfc, stepId, None, wfc.workflow)
   }
 
-  // is tail recursive since recursion happend asynchronously
+  // is tail recursive since recursion happens asynchronously
   private def doPost[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: Request[Any], ec: ExecutionContext): Future[Result] = {
     logger.debug(s"doPost $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doPost: flow finished!") // flow has finished (only will happen if last step has a post)
       case Left(ws: WorkflowSyntax.WSStep[_,_]) =>
         val optB = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
+        lazy val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
         if (ws.label == targetLabel) {
-          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
           ws.step.post(ctx)(request).flatMap {
             case Left(r)  => logger.warn(s"$ws.label returning result"); Future(r)
             case Right(a) => logger.warn(s"putting ${ws.label} -> $a in session")
@@ -108,9 +106,8 @@ object WorkflowExecutor {
           optB match {
             case Some(b) => val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
                             doPost(wfc, targetLabel, nextPreviousLabel, ws.next(b))
-            case None    => logger.warn(s"client requested $targetLabel, but they only have data for ${ws.label}")
-                            // TODO can we just backtrack, rather than rerun?
-                            doPost(wfc, ws.label, None, wfc.workflow)
+            case None    => logger.warn(s"client requested doPost $targetLabel, but they only have data for ${ws.label}")
+                            Future(ResultsImpl.Redirect(ctx.actionCurrent))
           }
         }
     }
@@ -132,23 +129,21 @@ object WorkflowExecutor {
     }
   }
 
-  // is tail recursive since recursion happend asynchronously
+  // is tail recursive since recursion happens asynchronously
   private def doWs[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: RequestHeader, ec: ExecutionContext): Future[WebSocket[String, String]] = {
     logger.debug(s"doWs $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doWs: flow finished!") // flow has finished (only will happen if last step has a post)
       case Left(ws: WorkflowSyntax.WSStep[_,_]) =>
         val optB = dataFor(ws.label, wfc.dataStorage, ws.serialiser)
+        lazy val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
         if (ws.label == targetLabel) {
-          val ctx = mkWorkflowContext(wfc, ws.label, previousLabel, optB)
           ws.step.ws(ctx)(request).map(_.getOrElse(sys.error(s"No ws defined for step ${ws.label}")))
         } else {
           optB match {
             case Some(b) => val nextPreviousLabel = if (ws.cache) previousLabel else Some(ws.label)
                             doWs(wfc, targetLabel, nextPreviousLabel, ws.next(b))
-            case None    => logger.warn(s"client requested $targetLabel, but they only have data for ${ws.label}")
-                            // TODO can we just backtrack, rather than rerun?
-                            doWs(wfc, ws.label, None, wfc.workflow)
+            case None    => sys.error(s"client requested doWs $targetLabel, but they only have data for ${ws.label}")
           }
         }
     }
