@@ -22,7 +22,6 @@ resolvers += "jitpack" at "https://jitpack.io"
 
 routes:
 ```
-GET     /myflow/start       controllers.MyFlow.start
 POST    /myflow/:stepKey    controllers.MyFlow.post(stepKey)
 GET     /myflow/:stepKey    controllers.MyFlow.get(stepKey)
 
@@ -42,19 +41,17 @@ object MyFlow extends Controller{
       _           <- Workflow.step("step2", Step2(step1Result))
     } yield ()
 
-  val wfc = WorkflowConf[Unit](
+  val conf = WorkflowConf[Unit](
     workflow    = workflow,
     router      = routes.MyFlow)
 
   def get(stepId: String) = Action.async { implicit request =>
-    WorkflowExecutor.getWorkflow(wfc, stepId)
+    WorkflowExecutor.getWorkflow(conf, stepId)
   }
 
   def post(stepId: String) = Action.async { implicit request =>
-    WorkflowExecutor.postWorkflow(wfc, stepId)
+    WorkflowExecutor.postWorkflow(conf, stepId)
   }
-
-  def start() = get("start")
 }
 ```
 

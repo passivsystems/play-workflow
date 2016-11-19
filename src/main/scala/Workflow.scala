@@ -9,7 +9,8 @@ import play.api.mvc.{Call, Request, RequestHeader, Result, WebSocket}
 case class WorkflowConf[A](
   workflow:    Workflow[A],
   dataStorage: DataStorage = SessionStorage,
-  router:      {def post(stepKey: String): Call; def get(stepKey: String): Call}
+  router:      {def post(stepKey: String): Call; def get(stepKey: String): Call},
+  start:       String = "start"
 )
 
 case class WorkflowContext[A] private [workflow] (

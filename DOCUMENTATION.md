@@ -23,7 +23,7 @@ As well as indicating how to serialise an individual step object, a storage stra
 * `GzippedSessionStorage` - this is the same as `SessionStorage` apart from the data is also compressed with gzip.
 The storage can be set in the WorkflowConf:
 ```scala
-  val wfc = WorkflowConf[Unit](
+  val conf = WorkflowConf[Unit](
     workflow    = workflow(auth),
     dataStorage = SubSessionStorage("myflow"),
     router      = routes.MyFlow)
@@ -59,24 +59,22 @@ object MySecureFlow extends AuthController {
       _               <- step("step2",     Step2(auth, step1Result))
     } yield ()
 
-  def wfc(auth: Auth) = WorkflowConf[Unit](
+  def conf(auth: Auth) = WorkflowConf[Unit](
     workflow    = workflow(auth),
     router      = routes.MySecureFlow)
 
   def get(stepId: String) = Action.async { implicit request =>
     checkAuth().flatMap {
       case Left(r)     => Future(r)
-      case Right(auth) => getWorkflow(wfc(auth), stepId)
+      case Right(auth) => getWorkflow(conf(auth), stepId)
     }
   }
   def post(stepId: String) = Action.async { implicit request =>
     checkAuth().flatMap {
       case Left(r)     => Future(r)
-      case Right(auth) => postWorkflow(wfc(auth), stepId)
+      case Right(auth) => postWorkflow(conf(auth), stepId)
     }
   }
-
-  def start() = get("start")
 }
 ```
 
@@ -210,7 +208,7 @@ and add the endpoint to the controller:
 object MyFlow extends Controller {
   // ...
   def ws(stepId: String) = WebSocket[String, String] { implicit request =>
-    WorkflowExecutor.wsWorkflow(wfc, stepId)
+    WorkflowExecutor.wsWorkflow(conf, stepId)
   }
 }
 ```
