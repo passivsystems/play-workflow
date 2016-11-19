@@ -68,15 +68,20 @@ object Workflow {
   def liftF[A](f: Future[A])(implicit ec: ExecutionContext): Workflow[A] =
     FreeT.liftTU(f)
 
-  // TODO make tail recursive
-  def sequence[A](l: List[Workflow[A]])(implicit ec: ExecutionContext): Workflow[List[A]] =
-    l match {
-      case wfa :: rest => for {
-                             a   <- wfa
-                             acc <- sequence(rest)
-                           } yield a :: acc
-      case Nil         => pure[List[A]](Nil)
+  def sequence[A](l: List[Workflow[A]])(implicit ec: ExecutionContext): Workflow[List[A]] = {
+    @annotation.tailrec
+    def go(wfl: Workflow[List[A]], l: List[Workflow[A]]): Workflow[List[A]] = {
+      l match {
+        case wfa :: rest => val wf2 = for {
+                               l   <- wfl
+                               a   <- wfa
+                             } yield a :: l
+                            go(wf2, rest)
+        case Nil         => wfl
+      }
     }
+    go(pure[List[A]](Nil), l.reverse)
+  }
 
     def pure[A](x: A)(implicit ec: ExecutionContext): Workflow[A] =
       FreeT.pure[WorkflowSyntax, Future, A](x)
