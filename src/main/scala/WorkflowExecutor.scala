@@ -49,21 +49,23 @@ object WorkflowExecutor {
   }
 
   // TODO refactor commonality between doGet/doPost - trouble with existential type
-  //      also the unchecked type in match - required for compilation (we know they match)
-  // is tail recursive since recursion happend asynchronously
+  // is tail recursive since recursion happens asynchronously
   private def doGet[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: Request[Any], ec: ExecutionContext): Future[Option[Result]] = {
     logger.debug(s"doGet $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doGet: flow finished!") // flow has finished (only will happen if last step has a post)
       case Left(WorkflowSyntax.WSStep(label, step, serialiser, cache, next)) =>
+        val optB = dataFor(label, wfc.dataStorage, serialiser)
+        lazy val ctx = mkWorkflowContext(wfc, label, previousLabel, optB)
         if (label == targetLabel) {
-          val optB = optDataFor(label, wfc.dataStorage, serialiser)
-          val ctx = mkWorkflowContext(wfc, label, previousLabel, optB)
           step.get(ctx)(request)
         } else {
-          val b = dataFor(label, wfc.dataStorage, serialiser)
-          val nextPreviousLabel = if (cache) previousLabel else Some(label)
-          doGet(wfc, targetLabel, nextPreviousLabel, next(b))
+          optB match {
+            case Some(b) => val nextPreviousLabel = if (cache) previousLabel else Some(label)
+                            doGet(wfc, targetLabel, nextPreviousLabel, next(b))
+            case None    => logger.warn(s"client requested doGet $targetLabel, but they only have data for $label")
+                            Future(Some(ResultsImpl.Redirect(ctx.actionCurrent)))
+          }
         }
     }
   }
@@ -85,9 +87,9 @@ object WorkflowExecutor {
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doPost: flow finished!") // flow has finished (only will happen if last step has a post)
       case Left(WorkflowSyntax.WSStep(label, step, serialiser, cache, next)) =>
+        val optB = dataFor(label, wfc.dataStorage, serialiser)
+        lazy val ctx = mkWorkflowContext(wfc, label, previousLabel, optB)
         if (label == targetLabel) {
-          val optB = optDataFor(label, wfc.dataStorage, serialiser)
-          val ctx = mkWorkflowContext(wfc, label, previousLabel, optB)
           step.post(ctx)(request).flatMap {
             case Left(r)  => logger.warn(s"$label returning result"); Future(r)
             case Right(a) => logger.warn(s"putting $label -> $a in session")
@@ -101,9 +103,12 @@ object WorkflowExecutor {
                              }
           }
         } else {
-          val b = dataFor(label, wfc.dataStorage, serialiser)
-          val nextPreviousLabel = if (cache) previousLabel else Some(label)
-          doPost(wfc, targetLabel, nextPreviousLabel, next(b))
+          optB match {
+            case Some(b) => val nextPreviousLabel = if (cache) previousLabel else Some(label)
+                            doPost(wfc, targetLabel, nextPreviousLabel, next(b))
+            case None    => logger.warn(s"client requested doPost $targetLabel, but they only have data for $label")
+                            Future(ResultsImpl.Redirect(ctx.actionCurrent))
+          }
         }
     }
   }
@@ -124,28 +129,27 @@ object WorkflowExecutor {
     }
   }
 
-  // is tail recursive since recursion happend asynchronously
+  // is tail recursive since recursion happens asynchronously
   private def doWs[A](wfc: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: RequestHeader, ec: ExecutionContext): Future[WebSocket[String, String]] = {
     logger.debug(s"doWs $targetLabel, $previousLabel")
     remainingWf.resume.flatMap {
       case Right(a) => sys.error("doWs: flow finished!") // flow has finished (only will happen if last step has a post)
       case Left(WorkflowSyntax.WSStep(label, step, serialiser, cache, next)) =>
+        val optB = dataFor(label, wfc.dataStorage, serialiser)
+        lazy val ctx = mkWorkflowContext(wfc, label, previousLabel, optB)
         if (label == targetLabel) {
-          val optB = optDataFor(label, wfc.dataStorage, serialiser)
-          val ctx = mkWorkflowContext(wfc, label, previousLabel, optB)
           step.ws(ctx)(request).map(_.getOrElse(sys.error(s"No ws defined for step $label")))
         } else {
-          val b = dataFor(label, wfc.dataStorage, serialiser)
-          val nextPreviousLabel = if (cache) previousLabel else Some(label)
-          doWs(wfc, targetLabel, nextPreviousLabel, next(b))
+          optB match {
+            case Some(b) => val nextPreviousLabel = if (cache) previousLabel else Some(label)
+                            doWs(wfc, targetLabel, nextPreviousLabel, next(b))
+            case None    => sys.error(s"client requested doWs $targetLabel, but they only have data for $label")
+          }
         }
     }
   }
 
-  private def dataFor[A](label: String, dataStorage: DataStorage, serialiser: Serialiser[A])(implicit request: RequestHeader): A =
-    optDataFor(label, dataStorage, serialiser).getOrElse(sys.error(s"invalid state - should have stored result for step $label"))
-
-  private def optDataFor[A](label: String, dataStorage: DataStorage, serialiser: Serialiser[A])(implicit request: RequestHeader): Option[A] =
+  private def dataFor[A](label: String, dataStorage: DataStorage, serialiser: Serialiser[A])(implicit request: RequestHeader): Option[A] =
     dataStorage.readData(label).flatMap(serialiser.deserialise(_))
 
   private def nextLabel[A](wf: Workflow[A])(implicit ec: ExecutionContext): Future[Option[String]] = {
