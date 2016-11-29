@@ -73,14 +73,14 @@ object Workflow {
     def go(wfl: Workflow[List[A]], l: List[Workflow[A]]): Workflow[List[A]] = {
       l match {
         case wfa :: rest => val wf2 = for {
-                               l   <- wfl
-                               a   <- wfa
+                               l <- wfl
+                               a <- wfa
                              } yield a :: l
                             go(wf2, rest)
         case Nil         => wfl
       }
     }
-    go(pure[List[A]](Nil), l.reverse)
+    go(pure[List[A]](Nil), l)
   }
 
     def pure[A](x: A)(implicit ec: ExecutionContext): Workflow[A] =
