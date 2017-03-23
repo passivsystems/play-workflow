@@ -68,31 +68,9 @@ object Workflow {
   def liftF[A](f: Future[A])(implicit ec: ExecutionContext): Workflow[A] =
     FreeT.liftTU(f)
 
-  def sequence[A](l: List[Workflow[A]])(implicit ec: ExecutionContext): Workflow[List[A]] = {
-    @annotation.tailrec
-    def go(wfl: Workflow[List[A]], l: List[Workflow[A]]): Workflow[List[A]] = {
-      l match {
-        case wfa :: rest => val wf2 = for {
-                               l <- wfl
-                               a <- wfa
-                             } yield a :: l
-                            go(wf2, rest)
-        case Nil         => wfl
-      }
-    }
-    go(pure[List[A]](Nil), l)
-  }
-
-    def pure[A](x: A)(implicit ec: ExecutionContext): Workflow[A] =
-      FreeT.pure[WorkflowSyntax, Future, A](x)
+  def pure[A](x: A)(implicit ec: ExecutionContext): Workflow[A] =
+    FreeT.pure[WorkflowSyntax, Future, A](x)
 }
-
-trait WorkflowOps {
-  implicit class ListWithSequence[A](l: List[Workflow[A]])(implicit ec: ExecutionContext) {
-    def sequence: Workflow[List[A]] = Workflow.sequence(l)
-  }
-}
-object WorkflowOps extends WorkflowOps
 
 object Step {
   implicit val ec = play.api.libs.concurrent.Execution.defaultContext
@@ -118,6 +96,5 @@ trait AllInstances
   extends StepTInstances
   with    UpickleSerialiser
   with    WorkflowInstances
-  with    WorkflowOps
   with    cats.instances.FutureInstances
 object implicits extends AllInstances
