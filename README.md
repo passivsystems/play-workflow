@@ -1,6 +1,6 @@
 # Play - Workflow
 
-Workflow engine for Play! Framework (2.3.x).
+Workflow engine for Play! Framework (2.4.x).
 
 ## About
 
