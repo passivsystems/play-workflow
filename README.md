@@ -2,6 +2,8 @@
 
 Workflow engine for Play! Framework (2.6.x).
 
+[![Release](https://jitpack.io/v/passivsystems/play-workflow.svg)](https://jitpack.io/#passivsystems/play-workflow)
+
 ## About
 
 Write workflows/wizards with composable steps for Play! Framework apps.
