@@ -73,7 +73,7 @@ object Workflow {
 }
 
 object Step {
-  implicit val ec = play.api.libs.concurrent.Execution.defaultContext
+  implicit val ec = scala.concurrent.ExecutionContext.Implicits.global
   def apply[A](
     get:  WorkflowContext[A] => Request[Any]  => Future[Option[Result]] =
       (ctx: WorkflowContext[A]) => (req: RequestHeader) => Future(None),
