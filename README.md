@@ -1,6 +1,6 @@
 # Play - Workflow
 
-Workflow engine for Play! Framework (2.5.x).
+Workflow engine for Play! Framework (2.6.x).
 
 ## About
 
@@ -14,7 +14,7 @@ The workflow is monadic and can be defined with for-comprehensions.
 
 add the following to build.sbt:
 ```scala
-libraryDependencies += "com.github.passivsystems" % "play-workflow" % "0.2.0"
+libraryDependencies += "com.github.passivsystems.play-workflow" %% "play-workflow" % "0.3.0"
 resolvers += "jitpack" at "https://jitpack.io"
 ```
 
