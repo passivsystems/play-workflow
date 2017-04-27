@@ -86,10 +86,10 @@ object WorkflowExecutor {
       {
          case (ws, optB, ctx) =>
            ws.step.post(ctx)(request).flatMap {
-             case Left(r)  => logger.warn(s"${ws.label} returning result"); Future(r)
-             case Right(a) => logger.warn(s"putting ${ws.label} -> $a in session")
+             case Left(r)  => logger.debug(s"${ws.label} returning result"); Future(r)
+             case Right(a) => logger.debug(s"putting ${ws.label} -> $a in session")
                               nextLabel(ws.next(a)).map {
-                                case Some(next) => logger.warn(s"redirecting to $next")
+                                case Some(next) => logger.debug(s"redirecting to $next")
                                                    conf.dataStorage.withUpdatedSession(
                                                      ResultsImpl.Redirect(mkWorkflowContext(conf, next, Some(ws.label), optB).actionCurrent),
                                                      ws.label,
@@ -109,7 +109,7 @@ object WorkflowExecutor {
     )
   }
 
-  private type WS[A,B] = scala.concurrent.Future[Either[play.api.mvc.Result,(play.api.libs.iteratee.Enumerator[A], play.api.libs.iteratee.Iteratee[B,Unit]) => Unit]]
+  private type WS = scala.concurrent.Future[Either[play.api.mvc.Result, akka.stream.scaladsl.Flow[play.api.http.websocket.Message, play.api.http.websocket.Message, _]]]
 
   /** Will execute a workflow and return an Action result. The websocket request will be
    *  directed to the indicated stepId. A Runtime exception will be thrown if the Step does not
@@ -118,17 +118,15 @@ object WorkflowExecutor {
    *  @param conf the configuration defining the workflow
    *  @param stepId the current step position.
    */
-  def wsWorkflow[A](conf: WorkflowConf[A], currentLabel: String)(implicit request: RequestHeader, ec: ExecutionContext): WS[String, String] = {
+  def wsWorkflow[A](conf: WorkflowConf[A], currentLabel: String)(implicit request: RequestHeader, ec: ExecutionContext): WS = {
     logger.debug(s"wsWorkflow $currentLabel")
-    doWs(conf, currentLabel, None, conf.workflow).flatMap {
-      case WebSocket(f) => f(request)
-    }
+    doWs(conf, currentLabel, None, conf.workflow).flatMap { _.apply(request) }
   }
 
   // is tail recursive since recursion happens asynchronously
-  private def doWs[A](conf: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: RequestHeader, ec: ExecutionContext): Future[WebSocket[String, String]] = {
+  private def doWs[A](conf: WorkflowConf[A], targetLabel: String, previousLabel: Option[String], remainingWf: Workflow[A])(implicit request: RequestHeader, ec: ExecutionContext): Future[WebSocket] = {
     logger.debug(s"doWs $targetLabel, $previousLabel")
-    fold[A, B forSome {type B}, WebSocket[String,String]](conf, targetLabel, previousLabel, remainingWf)(
+    fold[A, B forSome {type B}, WebSocket](conf, targetLabel, previousLabel, remainingWf)(
       {
          case (ws, optB, ctx) =>
            ws.step.ws(ctx)(request).map(_.getOrElse(sys.error(s"No ws defined for step ${ws.label}")))

@@ -17,7 +17,7 @@ import play.api.mvc.{Request, RequestHeader, Result, WebSocket}
 final case class StepT[F[_],A](
   get:  WorkflowContext[A] => Request[Any]  => F[Option[Result]],
   post: WorkflowContext[A] => Request[Any]  => F[Either[Result, A]],
-  ws:   WorkflowContext[A] => RequestHeader => F[Option[WebSocket[String, String]]]  // TODO support any input, output (not just String) if a reader and writer are provided.
+  ws:   WorkflowContext[A] => RequestHeader => F[Option[WebSocket]]
 ) {
   // help! need to transform b back to a! Do we need to store the original object in the session?
   private def t[B,C](ctx: WorkflowContext[B]): WorkflowContext[C] =
@@ -45,7 +45,7 @@ object StepT {
       StepT(
         get  = (ctx: WorkflowContext[A]) => (req: Request[Any])  => A.pure[Option[Result]](None),
         post = (ctx: WorkflowContext[A]) => (req: Request[Any])  => A.map(f)(Right(_): Either[Result,A]),
-        ws   = (ctx: WorkflowContext[A]) => (req: RequestHeader) => A.pure[Option[WebSocket[String,String]]](None))
+        ws   = (ctx: WorkflowContext[A]) => (req: RequestHeader) => A.pure[Option[WebSocket]](None))
 }
 
 trait StepTInstances {

@@ -1,6 +1,6 @@
 # Play - Workflow
 
-Workflow engine for Play! Framework (2.4.x).
+Workflow engine for Play! Framework (2.5.x).
 
 ## About
 
@@ -31,9 +31,9 @@ MyFlow:
 
 ```scala
 import workflow._
-import workflow.UpickleSerialiser._
+import workflow.implicits._
 
-object MyFlow extends Controller{
+object MyFlow extends Controller {
 
   val workflow: Workflow[Unit] =
     for {
@@ -70,13 +70,13 @@ case class Step1Result(name: String)
 
 object Step1 extends Controller {
 
-  def apply(): Step[Step1] = {
+  def apply(): Step[Step1Result] = {
 
     val form = Form(Forms.mapping(
         "name" -> Forms.nonEmptyText
       )(Step1Result.apply)(Step1Result.unapply))
 
-    def get(ctx: WorkflowContext[Step1])(implicit request: Request[Any]): Future[Result] = {
+    def get(ctx: WorkflowContext[Step1Result])(implicit request: Request[Any]): Future[Result] = Future {
       val filledForm = ctx.stepObject match {
         case Some(step1) => form.fill(step1)
         case None        => form
@@ -84,15 +84,15 @@ object Step1 extends Controller {
       Ok(views.html.step1(ctx, filledForm))
     }
 
-    def post(ctx: WorkflowContext[Step1])(implicit request: Request[Any]): Future[Either[Result, Step1]] = {
+    def post(ctx: WorkflowContext[Step1Result])(implicit request: Request[Any]): Future[Either[Result, Step1Result]] = Future {
       val boundForm = form.bindFromRequest
       boundForm.fold(
-        formWithErrors => Left(BadRequest(views.html.step1(ctx, formWithErrors)))
+        formWithErrors => Left(BadRequest(views.html.step1(ctx, formWithErrors))),
         step1Result    => Right(step1Result)
       )
     }
 
-    Step[Step1](
+    Step[Step1Result](
       get  = ctx => request => get(ctx)(request).map(Some(_)),
       post = ctx => request => post(ctx)(request)
     )
@@ -105,13 +105,11 @@ step1.scala.html:
 ```scala
 @(ctx: workflow.WorkflowContext[Step1Result], stepForm: Form[Step1Result])
 
-  @stepForm.globalError.map { error => @Html(Messages(error.message)) }
-  <form role="form" method="post" action="@ctx.actionCurrent">
-    @inputText(stepForm("name"))
-    <button type="submit">Next</button>
-  </form>
-
-}
+@stepForm.globalError.map { error => @Html(Messages(error.message)) }
+<form role="form" method="post" action="@ctx.actionCurrent">
+  @inputText(stepForm("name"))
+  <button type="submit">Next</button>
+</form>
 ```
 
 and Step2:
@@ -123,9 +121,9 @@ object Step2 extends Controller {
   def apply(step1Result: Step1Result): Step[Unit] = {
 
     def get(ctx: WorkflowContext[Unit])(implicit request: Request[Any]): Future[Result] =
-      Ok(views.html.step2(ctx, step1Result))
+      Future(Ok(views.html.step2(ctx, step1Result)))
 
-    Step[Step1](
+    Step[Unit](
       get  = ctx => request => get(ctx)(request).map(Some(_)),
       post = ctx => request => Future(Right(()))
     )
@@ -139,11 +137,10 @@ step2.scala.html:
 ```scala
 @(ctx: workflow.WorkflowContext[Unit], step1Result: Step1Result)
 
-  <p>Hello @step1Result.name</p>
+<p>Hello @step1Result.name</p>
 
-  @ctx.actionPrevious.map { previous =>
-    <a href="@previous">Back</a>
-  }
+@ctx.actionPrevious.map { previous =>
+  <a href="@previous">Back</a>
 }
 ```
 

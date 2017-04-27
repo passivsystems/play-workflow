@@ -78,7 +78,7 @@ object Step {
     get:  WorkflowContext[A] => Request[Any]  => Future[Option[Result]] =
       (ctx: WorkflowContext[A]) => (req: RequestHeader) => Future(None),
     post: WorkflowContext[A] => Request[Any]  => Future[Either[Result, A]],
-    ws:   WorkflowContext[A] => RequestHeader => Future[Option[WebSocket[String, String]]] =
+    ws:   WorkflowContext[A] => RequestHeader => Future[Option[WebSocket]] =
       (ctx: WorkflowContext[A]) => (req: RequestHeader) => Future(None)) =
       StepT[Future, A](get, post, ws)
 

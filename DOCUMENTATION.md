@@ -200,14 +200,14 @@ def workflow: Workflow[String] = for {
 Steps can use websockets.
 First register the endpoint in routes:
 ```scala
-GET     /install/:stepKey/ws        MyFlow.ws(stepKey)
+GET     /myflow/:stepKey/ws        MyFlow.ws(stepKey)
 ```
 
 and add the endpoint to the controller:
 ```scala
 object MyFlow extends Controller {
   // ...
-  def ws(stepId: String) = WebSocket[String, String] { implicit request =>
+  def ws(stepId: String) = WebSocket { implicit request =>
     WorkflowExecutor.wsWorkflow(conf, stepId)
   }
 }
@@ -222,14 +222,14 @@ object MyStep extends Controller {
     // ..
 
     def ws(ctx: WorkflowContext[StepOut])(implicit request: RequestHeader) =
-      WebSocket.acceptWithActor[String, String] { implicit request => out =>
-      akka.actor.Props(new MyStepActor(out))
-    }
+      WebSocket.accept[String, String] { implicit request =>
+        ActorFlow.actorRef(out => Props(new MyStepActor(out)))
+      }
 
     Step[StepOut](
         get  = ???,
         post = ???,
-        ws = Some(ctx => request => ws(ctx)(request))
+        ws = ctx => request => Future(Some(ws(ctx)(request)))
       )
   }
 }
