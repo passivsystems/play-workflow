@@ -6,13 +6,18 @@
 
 Once a step has been completed (i.e. the post function returns a `Right`), the result is stored for future requests, and the user may access steps further down the workflow.
 
-If the object to be stored can be pickled with [upickle](http://www.lihaoyi.com/upickle-pprint/upickle/), then the default serialiser can be used. Imported with:
+If the object to be stored can be encoded/decoded with [circe](https://circe.github.io/circe/), then the default serialiser can be used. Imported with:
 ```scala
 import workflow.implicits._
 ```
 or explicitly:
 ```scala
-import workflow.UpickleSerialiser._
+import workflow.DefaultSerialiser._
+```
+
+To enable encoding/decoding with circe, the auto generation can be enabled with:
+```scala
+import io.circe.generic.auto._
 ```
 
 You can provide your own serialiser, by implementing the trait `workflow.Serialiser` to provide different behaviour, and making sure the serialiser is implicitly available.

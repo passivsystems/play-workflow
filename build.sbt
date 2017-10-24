@@ -4,7 +4,8 @@ import play.sbt.PlayScala
 
 lazy val appVersion = "0.3.1-SNAPSHOT"
 
-lazy val catsVersion = "0.9.0"
+lazy val catsVersion  = "0.9.0"
+lazy val circeVersion = "0.8.0"
 
 organization := "com.passivsystems"
 name         := "play-workflow"
@@ -14,14 +15,15 @@ scalaVersion       := "2.11.8"
 crossScalaVersions := Seq("2.11.8", "2.12.1")
 
 libraryDependencies ++= Seq(
-  "com.lihaoyi"   %% "upickle"     % "0.4.4",
-  "org.typelevel" %% "cats-core"   % catsVersion,
-  "org.typelevel" %% "cats-free"   % catsVersion,
+  "org.typelevel"  %% "cats-core"     % catsVersion,
+  "org.typelevel"  %% "cats-free"     % catsVersion,
   compilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3"),
+  "io.circe"       %% "circe-parser"  % circeVersion,
+  "io.circe"       %% "circe-generic" % circeVersion,
   // Test
-  "org.scalatest"  %% "scalatest"  % "3.0.0"     % Test,
-  "org.scalacheck" %% "scalacheck" % "1.13.4"    % Test,
-  "org.typelevel"  %% "cats-laws"  % catsVersion % Test
+  "org.scalatest"  %% "scalatest"     % "3.0.0"     % Test,
+  "org.scalacheck" %% "scalacheck"    % "1.13.4"    % Test,
+  "org.typelevel"  %% "cats-laws"     % catsVersion % Test
 )
 
 scalaSource in Compile := baseDirectory.value / "src/main/scala"

@@ -6,16 +6,23 @@ trait Serialiser[A] {
   def deserialise(s: String): Option[A]
 }
 
-/** serialiser which uses upickle deault Reader and Writer for storing step results in session */
-trait UpickleSerialiser {
-  implicit def serialiser[A](implicit reader: upickle.default.Reader[A], writer: upickle.default.Writer[A]): Serialiser[A] = new Serialiser[A] {
-    override def serialise(a: A) = upickle.default.write(a)
-    override def deserialise(s: String) = scala.util.Try {
-        upickle.default.read[A](s)
-      }.recoverWith {
-        case ex: Throwable => play.api.Logger.warn(s"Error deserializing session cookie: ${ex.getMessage}", ex); scala.util.Failure(ex)
-      }.toOption
-  }
+/** serialiser which uses circe for storing step results in session */
+trait DefaultSerialiser {
+  implicit def serialiser[A](implicit e: io.circe.Encoder[A], d: io.circe.Decoder[A]): Serialiser[A] =
+    new Serialiser[A] {
+      import io.circe.syntax._
+
+      def serialise(a: A): String =
+        a.asJson.toString
+
+      def deserialise(s: String): Option[A] = {
+        io.circe.parser.decode[A](s) match {
+          case Left(e)  => play.api.Logger.warn(s"Error deserializing session cookie: $e"); None
+          case Right(o) => Some(o)
+        }
+      }
+    }
 }
 
-object UpickleSerialiser extends UpickleSerialiser
+
+object DefaultSerialiser extends DefaultSerialiser

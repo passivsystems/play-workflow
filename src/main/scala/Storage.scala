@@ -26,15 +26,17 @@ object SessionStorage extends DataStorage {
 /** Uses Play's default session which stores the data in a cookie.
  *  The data is stored under a key, so can participate with existing session data.
  */
-case class SubSessionStorage(flowkey: String) extends DataStorage {
+case class SubSessionStorage(flowkey: String)(implicit serialiser: Serialiser[Map[String, String]]) extends DataStorage {
 
   private def writeToSession(result: Result, value: Map[String, String]): Result = {
-    val flowValue = upickle.default.write(value)
+    val flowValue = serialiser.serialise(value)
     result.withSession((flowkey -> flowValue))
   }
 
   private def readFromSession(request: RequestHeader): Map[String, String] =
-    request.session.get(flowkey).map { s => upickle.default.read[Map[String,String]](s) }.getOrElse(Map[String, String]())
+    request.session.get(flowkey).flatMap { s =>
+      serialiser.deserialise(s)
+    }.getOrElse(Map[String, String]())
 
   override def withNewSession(result: Result)(implicit request: RequestHeader): Result =
     writeToSession(result, Map[String, String]())
@@ -50,20 +52,16 @@ case class SubSessionStorage(flowkey: String) extends DataStorage {
  *  The data is stored under a key, so can participate with existing session data.
  *  the data is also compressed with gzip
  */
-case class GzippedSessionStorage(flowkey: String) extends DataStorage {
+case class GzippedSessionStorage(flowkey: String)(implicit serialiser: Serialiser[Map[String, String]]) extends DataStorage {
 
   private def writeToSession(result: Result, value: Map[String, String]): Result = {
-    val flowValue = new sun.misc.BASE64Encoder().encode(compress(upickle.default.write(value)))
+    val flowValue = new sun.misc.BASE64Encoder().encode(compress(serialiser.serialise(value)))
     result.withSession((flowkey -> flowValue))
   }
 
   private def readFromSession(request: RequestHeader): Map[String, String] =
     request.session.get(flowkey).flatMap { s =>
-      scala.util.Try {
-        upickle.default.read[Map[String, String]](decompress(new sun.misc.BASE64Decoder().decodeBuffer(s)))
-      }.recoverWith {
-        case ex: Throwable => play.api.Logger.warn(s"Error deserializing session cookie: ${ex.getMessage}", ex); scala.util.Failure(ex)
-      }.toOption
+      serialiser.deserialise(decompress(new sun.misc.BASE64Decoder().decodeBuffer(s)))
     }.getOrElse(Map[String, String]())
 
   override def withNewSession(result: Result)(implicit request: RequestHeader): Result =

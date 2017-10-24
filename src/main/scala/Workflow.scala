@@ -94,7 +94,7 @@ object Step {
 
 trait AllInstances
   extends StepTInstances
-  with    UpickleSerialiser
+  with    DefaultSerialiser
   with    WorkflowInstances
   with    cats.instances.FutureInstances
 object implicits extends AllInstances
