@@ -86,10 +86,10 @@ object WorkflowExecutor {
       {
          case (ws, optB, ctx) =>
            ws.step.post(ctx)(request).flatMap {
-             case Left(r)  => logger.warn(s"${ws.label} returning result"); Future(r)
-             case Right(a) => logger.warn(s"putting ${ws.label} -> $a in session")
+             case Left(r)  => logger.debug(s"${ws.label} returning result"); Future(r)
+             case Right(a) => logger.debug(s"putting ${ws.label} -> $a in session")
                               nextLabel(ws.next(a)).map {
-                                case Some(next) => logger.warn(s"redirecting to $next")
+                                case Some(next) => logger.debug(s"redirecting to $next")
                                                    conf.dataStorage.withUpdatedSession(
                                                      ResultsImpl.Redirect(mkWorkflowContext(conf, next, Some(ws.label), optB).actionCurrent),
                                                      ws.label,
