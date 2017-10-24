@@ -6,9 +6,10 @@ import PlayKeys._
 
 object ApplicationBuild extends Build {
 
-  lazy val appVersion = "0.0.2"
+  lazy val appVersion = "0.0.3-SNAPSHOT"
 
-  lazy val catsVersion = "0.8.1"
+  lazy val catsVersion  = "0.8.1"
+  lazy val circeVersion = "0.8.0"
 
   lazy val root = (project in file(".")).
     settings(
@@ -17,14 +18,16 @@ object ApplicationBuild extends Build {
       version      := appVersion,
       scalaVersion := "2.11.8",
       libraryDependencies ++= Seq(
-        "com.lihaoyi"   %% "upickle"     % "0.4.3",
-        "org.typelevel" %% "cats-core"   % catsVersion,
-        "org.typelevel" %% "cats-free"   % catsVersion,
+        "com.lihaoyi"    %% "upickle"       % "0.4.3",
+        "org.typelevel"  %% "cats-core"     % catsVersion,
+        "org.typelevel"  %% "cats-free"     % catsVersion,
         compilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3"),
+        "io.circe"       %% "circe-parser"  % circeVersion,
+        "io.circe"       %% "circe-generic" % circeVersion,
         // Test
-        "org.scalatest"  %% "scalatest"  % "3.0.0"     % Test,
-        "org.scalacheck" %% "scalacheck" % "1.13.4"    % Test,
-        "org.typelevel"  %% "cats-laws"  % catsVersion % Test
+        "org.scalatest"  %% "scalatest"     % "3.0.0"     % Test,
+        "org.scalacheck" %% "scalacheck"    % "1.13.4"    % Test,
+        "org.typelevel"  %% "cats-laws"     % catsVersion % Test
       ),
       scalaSource in Compile := baseDirectory.value / "src/main/scala",
       scalaSource in Test    := baseDirectory.value / "src/test/scala",
