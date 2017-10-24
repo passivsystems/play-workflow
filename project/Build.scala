@@ -18,7 +18,6 @@ object ApplicationBuild extends Build {
       version      := appVersion,
       scalaVersion := "2.11.8",
       libraryDependencies ++= Seq(
-        "com.lihaoyi"    %% "upickle"       % "0.4.3",
         "org.typelevel"  %% "cats-core"     % catsVersion,
         "org.typelevel"  %% "cats-free"     % catsVersion,
         compilerPlugin("org.spire-math" %% "kind-projector" % "0.9.3"),
