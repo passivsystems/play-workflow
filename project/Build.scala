@@ -8,7 +8,7 @@ object ApplicationBuild extends Build {
 
   lazy val appVersion = "0.0.4-SNAPSHOT"
 
-  lazy val catsVersion  = "0.8.1"
+  lazy val catsVersion  = "0.9.0"
   lazy val circeVersion = "0.8.0"
 
   lazy val root = (project in file(".")).
