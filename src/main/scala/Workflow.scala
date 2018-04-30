@@ -65,7 +65,7 @@ object Workflow {
   def cache[A](label: String, step: Step[A])(implicit serialiser: Serialiser[A], ec: ExecutionContext): Workflow[A] =
     FreeT.liftF[WorkflowSyntax, Future, A](WorkflowSyntax.WSStep[A,A](label, step, serialiser, true, identity))
 
-  def liftF[A](f: Future[A])(implicit ec: ExecutionContext): Workflow[A] =
+  def liftF[A](f: => Future[A])(implicit ec: ExecutionContext): Workflow[A] =
     FreeT.liftTU(f)
 
   def sequence[A](l: List[Workflow[A]])(implicit ec: ExecutionContext): Workflow[List[A]] = {
@@ -107,10 +107,10 @@ object Step {
  def pure[A](x: A)(implicit A: Applicative[Future]): Step[A] =
    StepT.pure[Future, A](x)
 
-  def liftF[A](f: Future[A])(implicit F: Applicative[Future]): Step[A] =
+  def liftF[A](f: => Future[A])(implicit F: Applicative[Future]): Step[A] =
     StepT.liftF(f)
 
-  def liftFE[A](f: Future[Either[Result,A]]): Step[A] =
+  def liftFE[A](f: => Future[Either[Result,A]]): Step[A] =
     Step(post = (ctx: WorkflowContext[A]) => (req: Request[Any]) => f)
 }
 
