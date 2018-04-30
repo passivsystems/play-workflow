@@ -41,7 +41,7 @@ object StepT {
   def pure[F[_], A](x: A)(implicit A: Applicative[F]): StepT[F, A] =
     liftF(A.pure(x))
 
-  def liftF[F[_], A](f: F[A])(implicit A: Applicative[F]): StepT[F, A] =
+  def liftF[F[_], A](f: => F[A])(implicit A: Applicative[F]): StepT[F, A] =
       StepT(
         get  = (ctx: WorkflowContext[A]) => (req: Request[Any])  => A.pure[Option[Result]](None),
         post = (ctx: WorkflowContext[A]) => (req: Request[Any])  => A.map(f)(Right(_): Either[Result,A]),

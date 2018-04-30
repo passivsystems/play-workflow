@@ -85,7 +85,7 @@ object Step {
  def pure[A](x: A)(implicit A: Applicative[Future]): Step[A] =
    StepT.pure[Future, A](x)
 
-  def liftF[A](f: Future[A])(implicit F: Applicative[Future]): Step[A] =
+  def liftF[A](f: => Future[A])(implicit F: Applicative[Future]): Step[A] =
     StepT.liftF(f)
 
   def liftFE[A](f: Future[Either[Result,A]]): Step[A] =
