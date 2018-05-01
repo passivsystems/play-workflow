@@ -1,0 +1,17 @@
+language: scala
+
+scala:
+  - 2.11.12
+  - 2.12.6
+  - 2.13.0-M3
+
+jdk:
+  - oraclejdk8
+
+cache:
+  directories:
+    - $HOME/.ivy2/cache
+    - $HOME/.sbt/boot
+
+script:
+  - sbt ++$TRAVIS_SCALA_VERSION +compile

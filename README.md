@@ -4,6 +4,8 @@ Workflow engine for Play! Framework (2.6.x).
 
 [![Release](https://jitpack.io/v/passivsystems/play-workflow.svg)](https://jitpack.io/#passivsystems/play-workflow)
 
+[![Build Status](https://travis-ci.org/passivsystems/play-workflow.svg?branch=master)](https://travis-ci.org/passivsystems/play-workflow)
+
 ## About
 
 Write workflows/wizards with composable steps for Play! Framework apps.
@@ -157,3 +159,5 @@ The flow can be accessed at URL `/myflow/start` as defined in the routes file. T
 ### Documentation
 
 More details are available in [DOCUMENTATION.md](DOCUMENTATION.md).
+
+Also see [Demo project](https://github.com/passivsystems/play-workflow-demo)
