@@ -4,8 +4,8 @@ import play.sbt.PlayScala
 
 lazy val appVersion = "0.3.1-SNAPSHOT"
 
-lazy val catsVersion  = "0.9.0"
-lazy val circeVersion = "0.8.0"
+lazy val catsVersion  = "1.0.1"
+lazy val circeVersion = "0.9.3"
 
 organization := "com.passivsystems"
 name         := "play-workflow"

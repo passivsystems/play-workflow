@@ -66,7 +66,7 @@ object Workflow {
     FreeT.liftF[WorkflowSyntax, Future, A](WorkflowSyntax.WSStep[A,A](label, step, serialiser, true, identity))
 
   def liftF[A](f: => Future[A])(implicit ec: ExecutionContext): Workflow[A] =
-    FreeT.liftTU(f)
+    FreeT.liftT(f)
 
   def pure[A](x: A)(implicit ec: ExecutionContext): Workflow[A] =
     FreeT.pure[WorkflowSyntax, Future, A](x)
