@@ -27,7 +27,7 @@ private [workflow] object WorkflowSyntax {
 }
 
 trait WorkflowInstances {
-  implicit def catsMonadForWorkflow(implicit M0: Monad[Future], A0: Applicative[Future], ec: ExecutionContext) =
+  implicit def catsMonadForWorkflow(implicit M0: Monad[Future], A0: Applicative[Future]) =
     new WorkflowMonad { implicit val M = M0; implicit val A = A0 }
 
   private [workflow] sealed trait WorkflowMonad extends Monad[Workflow] {
