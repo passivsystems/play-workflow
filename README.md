@@ -18,7 +18,7 @@ The workflow is monadic and can be defined with for-comprehensions.
 
 add the following to build.sbt:
 ```scala
-libraryDependencies += "com.github.passivsystems.play-workflow" %% "play-workflow" % "0.3.0"
+libraryDependencies += "com.github.passivsystems.play-workflow" %% "play-workflow" % "0.3.1"
 resolvers += "jitpack" at "https://jitpack.io"
 ```
 

@@ -2,7 +2,7 @@ import sbt._
 import Keys._
 import play.sbt.PlayScala
 
-lazy val appVersion = "0.3.1-SNAPSHOT"
+lazy val appVersion = "0.3.1"
 
 lazy val catsVersion  = "1.0.1"
 lazy val circeVersion = "0.9.3"
