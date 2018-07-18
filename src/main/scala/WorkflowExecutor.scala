@@ -36,24 +36,25 @@ object WorkflowExecutor {
    *  directed to the indicated stepId.
    *
    *  @param conf the configuration defining the workflow
-   *  @param stepId the current step position. A stepId value of {{{WorkflowConf.start}}} will
-             clear the session and redirect to the first stepId in the workflow.
+   *  @param stepId the current step position.
+   *    A stepId value of {{{WorkflowConf.start}}} will clear the session,
+   *      converting any query params to initial flow params and redirect to the first stepId in the workflow.
+   *    A stepId value of {{{WorkflowConf.restart}}} will clear the session,
+   *      perserving initial flow params and redirect to the first stepId in the workflow.
    */
   def getWorkflow[A](conf: WorkflowConf[A], stepId: String)(implicit request: Request[Any], ec: ExecutionContext): Future[Result] = {
     logger.debug(s"getWorkflow $stepId")
-    if (stepId == conf.start)
+    if (stepId == conf.start || stepId == conf.restart)
       nextLabel(conf.workflow).map {
-        case Some(initialStep) => val initParams: Map[String, String] = // for now not supporting multiple values, inorder to reuse flow serialiser
-                                    request.queryString.flatMap {
-                                      case (k, vs) if vs.isEmpty => Map.empty[String, String]
-                                      case (k, vs)               => Map(k -> vs(0))
-                                    }
-                                  conf.dataStorage.withNewSession(ResultsImpl.Redirect(conf.router.get(initialStep).url), initParams)
-        case None              => sys.error("empty flow!")
-      }
-    else if (stepId == conf.restart)
-      nextLabel(conf.workflow).map {
-        case Some(initialStep) => conf.dataStorage.withNewSession(ResultsImpl.Redirect(conf.router.get(initialStep).url))
+        case Some(initialStep) => if (stepId == conf.start) {
+                                    val initParams: Map[String, String] = // for now not supporting multiple values, inorder to reuse flow serialiser
+                                      request.queryString.flatMap {
+                                        case (k, Seq()) => Map.empty[String, String]
+                                        case (k, vs)    => Map(k -> vs(0))
+                                      }
+                                    conf.dataStorage.withNewSession(ResultsImpl.Redirect(conf.router.get(initialStep).url), initParams)
+                                  } else // restart
+                                    conf.dataStorage.withNewSession(ResultsImpl.Redirect(conf.router.get(initialStep).url))
         case None              => sys.error("empty flow!")
       }
     else

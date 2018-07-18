@@ -2,6 +2,20 @@
 
 ## Documentation
 
+### Initial flow parameters
+
+Query parameters can be added to any of the steps requests, but will only be available for the request, unless they are added to the step output.
+
+Sometimes we want to provide parameters to be available for the duration of the flow. These can be provided to the `start` step in the url, e.g. `myflow/start?initialParam=value`
+
+When the flow is restarted either by the `restart` step in the url `flow/restart`, or by the `WorkflowContext.restart`, the initial parameters are preserved.
+
+The initial flow parameters are available to all steps in the `WorkflowContext`:
+
+```scala
+ctx.initParams :: Map[String, String]
+```
+
 ### Serialisation
 
 Once a step has been completed (i.e. the post function returns a `Right`), the result is stored for future requests, and the user may access steps further down the workflow.
@@ -29,7 +43,7 @@ The storage can be set in the WorkflowConf:
 ```scala
   val conf = WorkflowConf[Unit](
     workflow    = workflow(auth),
-    dataStorage = SubSessionStorage("myflow"),
+    dataStorage = SessionStorage("myflow"),
     router      = routes.MyFlow)
 ```
 Custom storage, e.g. to store in database, can be created by importing the trait `DataStorage`.
@@ -41,7 +55,7 @@ If the session cannot be restored, (e.g. changed domain objects), the data will 
 The steps are provided a `WorkflowContext[A]` (where `A` refers to the result of the step) which can be used for navigation.
 * `ctx.actionCurrent` is the current step - forms and buttons should post to this to invoke the post function, and navigation will advance if the post function is successful.
 * `ctx.actionPrevious` is the previous step - buttons can use this to go back a page. Note, actionPrevious returns an `Option[Call]`` since not all pages can go back (i.e. the first page)
-* `ctx.restart` returns a `Call` pointing to the first page. In addition, it will clear the session. This may be useful to restart from error pages.
+* `ctx.restart` returns a `Call` pointing to the first page. In addition, it will clear the session, preserving any initial flow parameters. This may be useful to restart from error pages.
 * `ctx.goto("step1")` - returns a `Call` to a step using its identifier. This should be used with caution, since it will only work if the step is defined in the current flow, and all the previous steps have been completed (results in session).
 
 ## Security
