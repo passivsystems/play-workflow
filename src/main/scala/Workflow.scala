@@ -7,19 +7,23 @@ import play.api.mvc.{Call, Request, RequestHeader, Result, WebSocket}
 
 
 case class WorkflowConf[A](
-  workflow:    Workflow[A],
-  dataStorage: DataStorage = SessionStorage,
-  router:      {def post(stepKey: String): Call; def get(stepKey: String): Call},
-  start:       String = "start"
-)
+    workflow   : Workflow[A]
+  , dataStorage: DataStorage = SessionStorage("flow")(DefaultSerialiser.serialiser)
+  , router     : { def post(stepKey: String): Call
+                   def get (stepKey: String): Call
+                 }
+  , start      : String = "start"
+  , restart    : String = "restart"
+  )
 
 case class WorkflowContext[A] private [workflow] (
-  actionCurrent:  Call,
-  actionPrevious: Option[Call],
-  stepObject:     Option[A],
-  restart:        Call,
-  goto:           String => Call
-)
+    actionCurrent : Call
+  , actionPrevious: Option[Call]
+  , stepObject    : Option[A]
+  , restart       : Call
+  , goto          : String => Call
+  , initParams    : Map[String,String]
+  )
 
 private [workflow] sealed trait WorkflowSyntax[+Next]
 private [workflow] object WorkflowSyntax {

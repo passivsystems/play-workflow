@@ -23,8 +23,7 @@ import io.circe.generic.auto._
 You can provide your own serialiser, by implementing the trait `workflow.Serialiser` to provide different behaviour, and making sure the serialiser is implicitly available.
 
 As well as indicating how to serialise an individual step object, a storage strategy can be defined. The predefined storages are:
-* `SessionStorage` - which uses Play's default session which stores the data in a cookie. Each step has it's data stored as a new key, and starting a new flow will wipe the whole session. This is the default.
-* `SubSessionStorage` - this is similar to SessionStorage apart from a key is required, and all session data is stored under this key. This allows the data to participate with existing session data, including other flows if the key is unique. When a new flow is started, only the data under the key is wiped.
+* `SessionStorage` - which uses Play's default session which stores the data in a cookie. A key is required, and all data is stored under this key. This allows the data to participate with existing session data, including other flows if the key is unique. Each step has it's data stored as a new key, and starting a new flow will wipe all data under the key. This is the default.
 * `GzippedSessionStorage` - this is the same as `SessionStorage` apart from the data is also compressed with gzip.
 The storage can be set in the WorkflowConf:
 ```scala
