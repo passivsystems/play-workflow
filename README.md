@@ -1,6 +1,6 @@
 # Play - Workflow
 
-Workflow engine for Play! Framework (2.6.x).
+Workflow engine for Play! Framework.
 
 [![Release](https://jitpack.io/v/passivsystems/play-workflow.svg)](https://jitpack.io/#passivsystems/play-workflow)
 
@@ -21,6 +21,14 @@ add the following to build.sbt:
 libraryDependencies += "com.github.passivsystems.play-workflow" %% "play-workflow" % "0.3.2"
 resolvers += "jitpack" at "https://jitpack.io"
 ```
+
+The current version is compatible with Play 2.6.
+
+Previous versions are available here:
+ * [`0.2.0`](https://github.com/passivsystems/play-workflow/tree/0.2.0) for play-2.5
+ * [`0.1.0`](https://github.com/passivsystems/play-workflow/tree/0.1.0) for play-2.4
+ * [`0.0.4`](https://github.com/passivsystems/play-workflow/tree/0.0.4) for play-2.3
+
 
 ### Example
 
