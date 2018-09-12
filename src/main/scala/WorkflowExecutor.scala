@@ -20,17 +20,15 @@ object WorkflowExecutor {
     , label        : String
     , previousLabel: Option[String]
     , optB         : Option[B]
-    )(implicit request: RequestHeader): WorkflowContext[B] = {
-      val actionCurrent = conf.router.post(label)
+    )(implicit request: RequestHeader): WorkflowContext[B] =
       WorkflowContext(
-          actionCurrent  = actionCurrent
+          actionCurrent  = conf.router.post(label)
         , actionPrevious = previousLabel.map(conf.router.post(_))
         , stepObject     = optB
         , restart        = conf.router.get(conf.restart)
         , goto           = s => conf.router.get(s)
         , initParams     = conf.dataStorage.readInitParams
         )
-    }
 
   /** Will execute a workflow and return an Action result. The GET request will be
    *  directed to the indicated stepId.

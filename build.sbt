@@ -25,7 +25,7 @@ libraryDependencies ++= Seq(
   , "io.circe"       %% "circe-generic" % circeVersion
     // Test
   , "org.scalatest"  %% "scalatest"     % "3.0.5"     % Test
-  , "org.scalacheck" %% "scalacheck"    % "1.13.5"    % Test
+  , "org.scalacheck" %% "scalacheck"    % "1.14.0"    % Test
   , "org.typelevel"  %% "cats-laws"     % catsVersion % Test
   )
 
